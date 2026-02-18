@@ -1,5 +1,6 @@
 import streamlit as st
 
+from database.init_tables import init_databases
 from consts.consts import ROLES
 from database.login import init_db
 from services.auth import login_user
@@ -10,6 +11,7 @@ if "role" not in st.session_state:
 # Initialize database on app start
 try:
     init_db()
+    init_databases()
 except Exception as e:
     st.error(f"Database connection failed: {e}")
 
