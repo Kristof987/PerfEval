@@ -11,9 +11,15 @@ if "role" not in st.session_state:
 # Initialize database on app start
 try:
     init_db()
+except Exception as e:
+    st.error(f"Database init_db() failed: {e}")
+
+try:
     init_databases()
 except Exception as e:
-    st.error(f"Database connection failed: {e}")
+    st.error(f"Database init_databases() failed: {e}")
+    import traceback
+    st.error(traceback.format_exc())
 
 def login():
 
@@ -66,10 +72,16 @@ hr_campaigns = st.Page(
     icon=":material/campaign:"
 )
 
+hr_survey_builder = st.Page(
+    "hr/survey_builder.py",
+    title="Survey Builder",
+    icon=":material/edit_note:"
+)
+
 account_pages = [logout_page, settings, manage_teams]
 welcome_pages = [employee_1, employee_2]
 admin_pages = [admin_1, admin_2]
-hr_pages = [hr_campaigns]
+hr_pages = [hr_campaigns, hr_survey_builder]
 
 st.title("TÉR Project")
 
