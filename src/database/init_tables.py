@@ -98,7 +98,6 @@ def init_org_employees():
         cursor.close()
         connection.close()
 
-
 def init_employee_groups():
     connection = get_connection()
     cursor = connection.cursor()
@@ -135,6 +134,14 @@ def init_employee_groups():
         cursor.close()
         connection.close()
 
+def init_campaign():
+    #TODO
+
+def init_form():
+    #TODO
+
+def init_evaluation():
+    #TODO
 
 #todo system user, system permissions system roles
 #todo + forms, eval databases

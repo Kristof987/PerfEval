@@ -48,7 +48,7 @@ role = st.session_state.role
 
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 settings = st.Page("ui/settings_page.py", title="Settings", icon=":material/settings:")
-manage_teams = st.Page("ui/manage_teams.py", title="My Teams", icon=":material/groups:")
+manage_teams = st.Page("ui/manage_teams.py", title="My Groups", icon=":material/groups:")
 
 employee_1 = st.Page(
     "employee/dashboard.py",
