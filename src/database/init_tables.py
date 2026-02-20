@@ -135,13 +135,138 @@ def init_employee_groups():
         connection.close()
 
 def init_campaign():
-    #TODO
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+                   SELECT column_name
+                   FROM information_schema.columns
+                   WHERE table_name = 'campaign'
+                   """)
+
+    columns = [row[0] for row in cursor.fetchall()]
+
+    if not columns:
+        cursor.execute("DROP TABLE IF EXISTS campaign")
+        cursor.execute("""
+                       CREATE TABLE campaign
+                       (
+                           id          SERIAL PRIMARY KEY,
+                           uuid        UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                           name        VARCHAR(255) NOT NULL UNIQUE,
+                           description TEXT,
+                           start_date  TIMESTAMPTZ  NOT NULL,
+                           end_date    TIMESTAMPTZ,
+                           is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+                           comment  TEXT
+                       )
+                       """)
+
+    connection.commit()
+    cursor.close()
+    connection.close()
 
 def init_form():
-    #TODO
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+                   SELECT column_name
+                   FROM information_schema.columns
+                   WHERE table_name = 'form'
+                   """)
+
+    columns = [row[0] for row in cursor.fetchall()]
+
+    if not columns:
+        cursor.execute("DROP TABLE IF EXISTS form")
+        cursor.execute("""
+                       CREATE TABLE form
+                       (
+                           id          SERIAL PRIMARY KEY,
+                           uuid        UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                           name        VARCHAR(255) NOT NULL UNIQUE,
+                           description TEXT,
+                           questions JSONB NOT NULL
+                       )
+                       """)
+
+    connection.commit()
+    cursor.close()
+    connection.close()
 
 def init_evaluation():
-    #TODO
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+                   SELECT column_name
+                   FROM information_schema.columns
+                   WHERE table_name = 'evaluation'
+                   """)
+
+    columns = [row[0] for row in cursor.fetchall()]
+
+    if not columns:
+        cursor.execute("DROP TABLE IF EXISTS evaluation")
+        cursor.execute("""
+                       CREATE TABLE evaluation
+                       (
+                           id            SERIAL PRIMARY KEY,
+                           uuid          UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+                           campaign_id   INTEGER      NOT NULL,
+                           evaluator_id  INTEGER      NOT NULL,
+                           evaluatee_id  INTEGER      NOT NULL,
+                           form_id       INTEGER      NOT NULL,
+                           status        VARCHAR(20)  NOT NULL        DEFAULT 'todo',
+                           finish_date   TIMESTAMPTZ,
+                           answers       JSONB,
+                           CONSTRAINT fk_evaluator FOREIGN KEY (evaluator_id) REFERENCES organisation_employees(id),
+                           CONSTRAINT fk_evaluatee FOREIGN KEY (evaluatee_id) REFERENCES organisation_employees(id),
+                           CONSTRAINT status_check CHECK (status IN ('todo', 'pending', 'completed'))
+                       )
+                       """)
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+def init_campaign_groups():
+    """Initialize table linking campaigns with organization groups"""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'campaign_groups'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE public.campaign_groups
+                (
+                    campaign_id INTEGER NOT NULL REFERENCES public.campaign(id) ON DELETE CASCADE,
+                    group_id INTEGER NOT NULL REFERENCES public.organisation_groups(id) ON DELETE CASCADE,
+                    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (campaign_id, group_id)
+                )
+            """)
+
+        connection.commit()
+
+    except Exception as e:
+        connection.rollback()
+        print("init_campaign_groups ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 #todo system user, system permissions system roles
 #todo + forms, eval databases
@@ -151,3 +276,7 @@ def init_databases():
     init_org_roles()
     init_org_employees()
     init_employee_groups()
+    init_campaign()
+    init_form()
+    init_evaluation()
+    init_campaign_groups()
