@@ -24,19 +24,32 @@ except Exception as e:
 def login():
 
     st.header("Log in")
-    role = st.selectbox("Choose your role", ROLES, help="**Which role to choose?**\n\nTODO....")
-    name = st.text_input("Username or E-mail")
-    email = st.text_input("Email")
+    
+    # Import validation function
+    from database.system_users import validate_system_user
+    
+    st.info("Please log in with your system username or name")
+    username_input = st.text_input("Username or Name")
 
     if st.button("Log in"):
-        if name and role:
-            login_user(name, role, email)
-            st.session_state.role = role
-            st.session_state.name = name
-            st.session_state.email = email
-            st.rerun()
+        if username_input:
+            # Validate user exists in system_users table
+            is_valid, user_data = validate_system_user(username_input)
+            
+            if is_valid:
+                # Use the role from system_users
+                role = user_data['role_name'] if user_data['role_name'] else "Employee"
+                
+                login_user(user_data['username'], role, user_data['email'])
+                st.session_state.role = role
+                st.session_state.name = user_data['name']
+                st.session_state.username = user_data['username']
+                st.session_state.email = user_data['email']
+                st.rerun()
+            else:
+                st.error("Invalid username. Please contact your administrator to create a system account.")
         else:
-            st.warning("Please enter a username and select a role.")
+            st.warning("Please enter your username or name.")
 
 
 def logout():

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import random
 from datetime import datetime
 from hr.campaigns import (
     get_all_campaigns,
@@ -21,9 +22,39 @@ from hr.campaigns import (
     save_evaluations_batch
 )
 
+# Material icon mapping for consistent icon usage
+ICONS = {
+    "dashboard": ":material/monitoring:",
+    "add": ":material/add:",
+    "edit": ":material/edit:", 
+    "delete": ":material/delete:",
+    "view": ":material/visibility:",
+    "teams": ":material/groups:",
+    "matrix": ":material/grid_on:",
+    "save": ":material/save:",
+    "close": ":material/close:",
+    "check": ":material/check_circle:",
+    "error": ":material/cancel:",
+    "warning": ":material/warning:",
+    "info": ":material/info:",
+    "active": ":material/check_circle:",
+    "inactive": ":material/cancel:",
+    "office": ":material/business:",
+    "pause": ":material/pause:",
+    "pending": ":material/schedule:",
+    "help": ":material/help:",
+    "play": ":material/play_arrow:",
+    "dice": ":material/casino:",
+    "list": ":material/list:",
+    "lightbulb": ":material/lightbulb:",
+    "select_all": ":material/select_all:"
+}
+
+# Get query parameters
+query_params = st.query_params
+
 # Initialize session state for dialog management
-if 'show_create_dialog' not in st.session_state:
-    st.session_state.show_create_dialog = False
+# show_create_dialog is now handled by query params
 if 'show_edit_dialog' not in st.session_state:
     st.session_state.show_edit_dialog = False
 if 'edit_campaign_id' not in st.session_state:
@@ -47,13 +78,15 @@ if 'matrix_campaign_id' not in st.session_state:
 if 'matrix_group_id' not in st.session_state:
     st.session_state.matrix_group_id = None
 
-st.title("📊 Campaign Management")
+st.write(st.session_state)
+
+st.title(f"{ICONS['dashboard']} Campaign Management")
 st.write("Create and manage performance evaluation campaigns")
 
 # Create New Campaign Dialog
-if st.session_state.show_create_dialog:
+if query_params.get("create") == "true":
     with st.form("create_campaign_form"):
-        st.subheader("➕ Create New Campaign")
+        st.subheader(f"{ICONS['add']} Create New Campaign")
         
         name = st.text_input("Campaign Name*", placeholder="e.g., Q1 2024 Performance Review")
         description = st.text_area("Description*", placeholder="Enter campaign description")
@@ -74,7 +107,7 @@ if st.session_state.show_create_dialog:
         
         if submitted:
             if not name or not description:
-                st.error("❌ Please fill in all required fields (marked with *)")
+                st.error(f"{ICONS['error']} Please fill in all required fields (marked with *)")
             else:
                 # Convert dates to datetime
                 start_datetime = datetime.combine(start_date, datetime.min.time())
@@ -89,14 +122,14 @@ if st.session_state.show_create_dialog:
                 )
                 
                 if campaign_id:
-                    st.success(f"✅ Campaign '{name}' created successfully!")
-                    st.session_state.show_create_dialog = False
+                    st.success(f"{ICONS['check']} Campaign '{name}' created successfully!")
+                    query_params.clear()
                     st.rerun()
                 else:
-                    st.error("❌ Failed to create campaign. Campaign name might already exist.")
+                    st.error(f"{ICONS['error']} Failed to create campaign. Campaign name might already exist.")
         
         if cancelled:
-            st.session_state.show_create_dialog = False
+            query_params.clear()
             st.rerun()
 
 # Edit Campaign Dialog
@@ -105,7 +138,7 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
     
     if campaign:
         with st.form("edit_campaign_form"):
-            st.subheader(f"✏️ Edit Campaign: {campaign['name']}")
+            st.subheader(f"{ICONS['edit']} Edit Campaign: {campaign['name']}")
             
             name = st.text_input("Campaign Name*", value=campaign['name'])
             description = st.text_area("Description*", value=campaign['description'] or "")
@@ -129,7 +162,7 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
             
             if submitted:
                 if not name or not description:
-                    st.error("❌ Please fill in all required fields (marked with *)")
+                    st.error(f"{ICONS['error']} Please fill in all required fields (marked with *)")
                 else:
                     # Convert dates to datetime
                     start_datetime = datetime.combine(start_date, datetime.min.time())
@@ -146,12 +179,12 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
                     )
                     
                     if success:
-                        st.success(f"✅ Campaign '{name}' updated successfully!")
+                        st.success(f"{ICONS['check']} Campaign '{name}' updated successfully!")
                         st.session_state.show_edit_dialog = False
                         st.session_state.edit_campaign_id = None
                         st.rerun()
                     else:
-                        st.error("❌ Failed to update campaign.")
+                        st.error(f"{ICONS['error']} Failed to update campaign.")
             
             if cancelled:
                 st.session_state.show_edit_dialog = False
@@ -163,11 +196,13 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
     campaign = get_campaign_by_id(st.session_state.view_campaign_id)
     
     if campaign:
-        st.subheader(f"👁️ Campaign Details: {campaign['name']}")
+        st.subheader(f"{ICONS['view']} Campaign Details: {campaign['name']}")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.write(f"**Status:** {'🟢 Active' if campaign['is_active'] else '🔴 Inactive'}")
+            status_icon = ICONS['active'] if campaign['is_active'] else ICONS['inactive']
+            status_text = "Active" if campaign['is_active'] else "Inactive"
+            st.write(f"**Status:** {status_icon} {status_text}")
             st.write(f"**Start Date:** {campaign['start_date'].strftime('%Y-%m-%d')}")
             if campaign['end_date']:
                 st.write(f"**End Date:** {campaign['end_date'].strftime('%Y-%m-%d')}")
@@ -187,8 +222,8 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
         
         if evaluations:
             for eval in evaluations:
-                status_emoji = {"todo": "⏸️", "pending": "⏳", "completed": "✅"}.get(eval['status'], "❓")
-                st.write(f"{status_emoji} {eval['evaluator_name']} → {eval['evaluatee_name']} ({eval['status']})")
+                status_icon = {"todo": ICONS['pause'], "pending": ICONS['pending'], "completed": ICONS['check']}.get(eval['status'], ICONS['help'])
+                st.write(f"{status_icon} {eval['evaluator_name']} → {eval['evaluatee_name']} ({eval['status']})")
         else:
             st.info("No evaluations found for this campaign.")
         
@@ -202,7 +237,7 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
     campaign = get_campaign_by_id(st.session_state.team_campaign_id)
     
     if campaign:
-        st.subheader(f"👥 Team Assignment: {campaign['name']}")
+        st.subheader(f"{ICONS['teams']} Team Assignment: {campaign['name']}")
         
         # Get all groups and assigned groups
         all_groups = get_all_groups()
@@ -214,16 +249,16 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
             for group in assigned_groups:
                 col1, col2, col3 = st.columns([3, 1, 1])
                 with col1:
-                    st.write(f"🏢 **{group['name']}**")
+                    st.write(f"{ICONS['office']} **{group['name']}**")
                 with col2:
-                    if st.button("📊 Matrix", key=f"matrix_{group['id']}", use_container_width=True):
+                    if st.button(f"{ICONS['matrix']} Matrix", key=f"matrix_{group['id']}", use_container_width=True):
                         st.session_state.show_evaluation_matrix = True
                         st.session_state.matrix_campaign_id = st.session_state.team_campaign_id
                         st.session_state.matrix_group_id = group['id']
                         st.session_state.show_team_assignment = False
                         st.rerun()
                 with col3:
-                    if st.button("❌", key=f"remove_{group['id']}", use_container_width=True):
+                    if st.button(ICONS['close'], key=f"remove_{group['id']}", use_container_width=True):
                         remove_group_from_campaign(st.session_state.team_campaign_id, group['id'])
                         st.rerun()
         else:
@@ -237,9 +272,9 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
             for group in unassigned_groups:
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"🏢 {group['name']}")
+                    st.write(f"{ICONS['office']} {group['name']}")
                 with col2:
-                    if st.button("➕ Add", key=f"add_{group['id']}", use_container_width=True):
+                    if st.button(f"{ICONS['add']} Add", key=f"add_{group['id']}", use_container_width=True):
                         assign_group_to_campaign(st.session_state.team_campaign_id, group['id'])
                         st.rerun()
         else:
@@ -269,7 +304,7 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
         group_info = [g for g in get_all_groups() if g['id'] == st.session_state.matrix_group_id]
         group_name = group_info[0]['name'] if group_info else "Unknown"
         
-        st.subheader(f"📊 Evaluation Matrix: {campaign['name']} - {group_name}")
+        st.subheader(f"{ICONS['matrix']} Evaluation Matrix: {campaign['name']} - {group_name}")
         st.write("**Who evaluates whom**")
         st.caption("Rows = Evaluatee (who receives feedback), Columns = Evaluator (who gives feedback)")
         
@@ -279,7 +314,7 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
         forms = get_all_forms()
         
         if not forms:
-            st.error("❌ No forms available. Please create an evaluation form first.")
+            st.error(f"{ICONS['error']} No forms available. Please create an evaluation form first.")
         else:
             form_options = {f"{form['name']}": form['id'] for form in forms}
             selected_form_name = st.selectbox(
@@ -288,24 +323,6 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                 key="selected_form"
             )
             selected_form_id = form_options[selected_form_name]
-            
-            # Auto-assignment controls
-            st.write("---")
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                percentage = st.slider("Percentage of team to evaluate", min_value=0, max_value=100, value=30, step=5)
-            with col2:
-                st.write("")
-                st.write("")
-                if st.button("🎲 Auto-Assign", type="primary", use_container_width=True):
-                    st.info(f"Auto-assign feature: Each person would evaluate ~{percentage}% of the team (randomized). Implementation pending.")
-            with col3:
-                st.write("")
-                st.write("")
-                if st.button("🗑️ Clear All", use_container_width=True):
-                    # Clear all selections in session state
-                    st.session_state[matrix_key] = set()
-                    st.rerun()
             
             st.write("---")
             
@@ -347,10 +364,77 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             
             st.write("---")
             
+            # Auto-assignment controls
+            st.write("**Quick Selection:**")
+            
+            # Store percentage in session state if it doesn't exist
+            percentage_key = f"percentage_{st.session_state.matrix_campaign_id}_{st.session_state.matrix_group_id}"
+            if percentage_key not in st.session_state:
+                st.session_state[percentage_key] = 1
+            
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+            with col1:
+                if st.button(f"{ICONS['select_all']} Select All", use_container_width=True):
+                    # Select everyone evaluates everyone
+                    st.session_state[matrix_key] = set()
+                    for evaluator in members:
+                        for evaluatee in members:
+                            st.session_state[matrix_key].add((evaluator['id'], evaluatee['id']))
+                    st.rerun()
+            
+            with col2:
+                if st.button(f"{ICONS['delete']} Clear All", use_container_width=True):
+                    # Clear all selections in session state
+                    st.session_state[matrix_key] = set()
+                    st.rerun()
+            
+            with col3:
+                # Percentage input as number_input button-style
+                #TODO: rename percentage_key since it is no longer a percentage
+                percentage = st.number_input(
+                    "Number of evaluations per Employee",
+                    min_value=0,
+                    max_value=len(members)-1,
+                    value=st.session_state[percentage_key],
+                    step=1,
+                    key=f"percentage_input_{percentage_key}"
+                )
+                st.session_state[percentage_key] = percentage
+            
+            with col4:
+                if st.button(f"{ICONS['dice']} Auto-Assign", type="primary", use_container_width=True):
+                    st.session_state[matrix_key] = set()
+
+                    ids = [m["id"] for m in members]
+                    k = int(percentage)  # minden evaluatee ennyit kap
+
+                    out = {i: 0 for i in ids}  # ki mennyit ad eddig
+                    pool = [evaluatee for evaluatee in ids for _ in range(k)]  # mindenkinek k bejövő
+                    random.shuffle(pool)
+
+                    for evaluatee in pool:
+                        # válassz evaluatort, aki nem önmaga és eddig a legkevesebbet adott
+                        candidates = [evaluator for evaluator in ids if
+                                      evaluator != evaluatee and (evaluator, evaluatee) not in st.session_state[
+                                          matrix_key]]
+                        if not candidates:
+                            continue
+
+                        min_out = min(out[e] for e in candidates)
+                        best = [e for e in candidates if out[e] == min_out]
+                        evaluator = random.choice(best)
+
+                        st.session_state[matrix_key].add((evaluator, evaluatee))
+                        out[evaluator] += 1
+
+                    st.rerun()
+            
+            st.write("---")
+            
             # Save and Back buttons
             col_save, col_back = st.columns(2)
             with col_save:
-                if st.button("💾 Save Evaluations", type="primary", use_container_width=True):
+                if st.button(f"{ICONS['save']} Save Evaluations", type="primary", use_container_width=True):
                     # Convert session state selections to list of tuples
                     assignments = list(st.session_state[matrix_key])
                     
@@ -362,12 +446,12 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                     )
                     
                     if success:
-                        st.success(f"✅ Saved {len(assignments)} evaluation assignments with form '{selected_form_name}'!")
+                        st.success(f"{ICONS['check']} Saved {len(assignments)} evaluation assignments with form '{selected_form_name}'!")
                         # Clear session state for this matrix
                         del st.session_state[matrix_key]
                         st.rerun()
                     else:
-                        st.error("❌ Failed to save evaluations.")
+                        st.error(f"{ICONS['error']} Failed to save evaluations.")
             
             with col_back:
                 if st.button("Back to Teams", use_container_width=True):
@@ -384,7 +468,7 @@ elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_i
     campaign = get_campaign_by_id(st.session_state.delete_campaign_id)
     
     if campaign:
-        st.warning(f"⚠️ Are you sure you want to delete campaign '{campaign['name']}'?")
+        st.warning(f"{ICONS['warning']} Are you sure you want to delete campaign '{campaign['name']}'?")
         st.write("This will also delete all associated evaluations. This action cannot be undone.")
         
         col1, col2 = st.columns(2)
@@ -392,12 +476,12 @@ elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_i
             if st.button("Yes, Delete", type="primary", use_container_width=True):
                 success = delete_campaign(st.session_state.delete_campaign_id)
                 if success:
-                    st.success("✅ Campaign deleted successfully!")
+                    st.success(f"{ICONS['check']} Campaign deleted successfully!")
                     st.session_state.show_delete_confirm = False
                     st.session_state.delete_campaign_id = None
                     st.rerun()
                 else:
-                    st.error("❌ Failed to delete campaign.")
+                    st.error(f"{ICONS['error']} Failed to delete campaign.")
         with col2:
             if st.button("Cancel", use_container_width=True):
                 st.session_state.show_delete_confirm = False
@@ -408,8 +492,8 @@ elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_i
 else:
     # Create New Campaign Button
     st.write("")
-    if st.button("➕ Create New Campaign", type="primary", use_container_width=True):
-        st.session_state.show_create_dialog = True
+    if st.button(f"{ICONS['add']} Create New Campaign", type="primary", use_container_width=True):
+        query_params["create"] = "true"
         st.rerun()
     
     st.write("")
@@ -420,15 +504,15 @@ else:
     campaigns = get_all_campaigns()
     
     if not campaigns:
-        st.info("📋 No campaigns found. Create your first campaign to get started!")
+        st.info(f"{ICONS['list']} No campaigns found. Create your first campaign to get started!")
     else:
         # Display campaigns
         for campaign in campaigns:
             # Calculate completion percentage
             completion_pct = (campaign['completed'] / campaign['total'] * 100) if campaign['total'] > 0 else 0
             
-            # Status badge color
-            status_color = "🟢" if campaign['is_active'] else "🔴"
+            # Status badge icon
+            status_icon = ICONS['active'] if campaign['is_active'] else ICONS['inactive']
             status_text = "ACTIVE" if campaign['is_active'] else "INACTIVE"
             
             with st.container():
@@ -442,7 +526,7 @@ else:
                 
                 with col2:
                     st.write("")
-                    st.write(f"{status_color} **{status_text}**")
+                    st.write(f"{status_icon} **{status_text}**")
                 
                 with col3:
                     st.write("")
@@ -455,35 +539,36 @@ else:
                 col_view, col_edit, col_teams, col_toggle, col_delete = st.columns([1, 1, 1, 1, 1])
                 
                 with col_view:
-                    if st.button(f"👁️ View", key=f"view_{campaign['id']}", use_container_width=True):
+                    if st.button(f"{ICONS['view']} View", key=f"view_{campaign['id']}", use_container_width=True):
                         st.session_state.show_view_dialog = True
                         st.session_state.view_campaign_id = campaign['id']
                         st.rerun()
                 
                 with col_edit:
                     if campaign['is_active']:
-                        if st.button(f"✏️ Edit", key=f"edit_{campaign['id']}", use_container_width=True):
+                        if st.button(f"{ICONS['edit']} Edit", key=f"edit_{campaign['id']}", use_container_width=True):
                             st.session_state.show_edit_dialog = True
                             st.session_state.edit_campaign_id = campaign['id']
                             st.rerun()
                     else:
-                        st.button(f"✏️ Edit", key=f"edit_{campaign['id']}", disabled=True, use_container_width=True)
+                        st.button(f"{ICONS['edit']} Edit", key=f"edit_{campaign['id']}", disabled=True, use_container_width=True)
                 
                 with col_teams:
-                    if st.button(f"👥 Teams", key=f"teams_{campaign['id']}", use_container_width=True):
+                    if st.button(f"{ICONS['teams']} Teams", key=f"teams_{campaign['id']}", use_container_width=True):
                         st.session_state.show_team_assignment = True
                         st.session_state.team_campaign_id = campaign['id']
                         st.rerun()
                 
                 with col_toggle:
-                    toggle_label = "⏸️ Deactivate" if campaign['is_active'] else "▶️ Activate"
+                    toggle_icon = ICONS['pause'] if campaign['is_active'] else ICONS['play']
+                    toggle_label = f"{toggle_icon} Deactivate" if campaign['is_active'] else f"{toggle_icon} Activate"
                     if st.button(toggle_label, key=f"toggle_{campaign['id']}", use_container_width=True):
                         success = toggle_campaign_status(campaign['id'])
                         if success:
                             st.rerun()
                 
                 with col_delete:
-                    if st.button(f"🗑️ Delete", key=f"delete_{campaign['id']}", use_container_width=True):
+                    if st.button(f"{ICONS['delete']} Delete", key=f"delete_{campaign['id']}", use_container_width=True):
                         st.session_state.show_delete_confirm = True
                         st.session_state.delete_campaign_id = campaign['id']
                         st.rerun()
@@ -491,4 +576,4 @@ else:
                 st.write("---")
 
 st.write("")
-st.info("💡 **Tip:** Use the Teams button to assign groups and configure evaluation matrices for each campaign.")
+st.info(f"{ICONS['lightbulb']} **Tip:** Use the Teams button to assign groups and configure evaluation matrices for each campaign.")

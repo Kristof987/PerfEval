@@ -268,8 +268,118 @@ def init_campaign_groups():
         cursor.close()
         connection.close()
 
-#todo system user, system permissions system roles
-#todo + forms, eval databases
+def init_system_permissions():
+    """Initialize system permissions table"""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'system_permissions'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE public.system_permissions
+                (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL UNIQUE,
+                    description TEXT
+                )
+            """)
+
+        connection.commit()
+
+    except Exception as e:
+        connection.rollback()
+        print("init_system_permissions ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+def init_system_roles():
+    """Initialize system roles table"""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'system_roles'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE public.system_roles
+                (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL UNIQUE,
+                    system_permission_id INTEGER REFERENCES public.system_permissions(id)
+                )
+            """)
+
+        connection.commit()
+
+    except Exception as e:
+        connection.rollback()
+        print("init_system_roles ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+def init_system_users():
+    """Initialize system users table for login"""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'system_users'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE public.system_users
+                (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    username VARCHAR(255) NOT NULL UNIQUE,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    sys_szerep_id INTEGER REFERENCES public.system_roles(id),
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+        connection.commit()
+
+    except Exception as e:
+        connection.rollback()
+        print("init_system_users ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 def init_databases():
     init_org_groups()
@@ -280,3 +390,6 @@ def init_databases():
     init_form()
     init_evaluation()
     init_campaign_groups()
+    init_system_permissions()
+    init_system_roles()
+    init_system_users()
