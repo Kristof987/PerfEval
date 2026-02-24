@@ -21,63 +21,14 @@ from hr.campaigns import (
     delete_evaluation,
     save_evaluations_batch
 )
-
-# Material icon mapping for consistent icon usage
-ICONS = {
-    "dashboard": ":material/monitoring:",
-    "add": ":material/add:",
-    "edit": ":material/edit:", 
-    "delete": ":material/delete:",
-    "view": ":material/visibility:",
-    "teams": ":material/groups:",
-    "matrix": ":material/grid_on:",
-    "save": ":material/save:",
-    "close": ":material/close:",
-    "check": ":material/check_circle:",
-    "error": ":material/cancel:",
-    "warning": ":material/warning:",
-    "info": ":material/info:",
-    "active": ":material/check_circle:",
-    "inactive": ":material/cancel:",
-    "office": ":material/business:",
-    "pause": ":material/pause:",
-    "pending": ":material/schedule:",
-    "help": ":material/help:",
-    "play": ":material/play_arrow:",
-    "dice": ":material/casino:",
-    "list": ":material/list:",
-    "lightbulb": ":material/lightbulb:",
-    "select_all": ":material/select_all:"
-}
+from consts.consts import ICONS
+from ui.campaign_pages.create_new_campaign_page import CreateNewCampaignPage
+from ui.state.session_state import State
 
 # Get query parameters
 query_params = st.query_params
 
-# Initialize session state for dialog management
-# show_create_dialog is now handled by query params
-if 'show_edit_dialog' not in st.session_state:
-    st.session_state.show_edit_dialog = False
-if 'edit_campaign_id' not in st.session_state:
-    st.session_state.edit_campaign_id = None
-if 'show_view_dialog' not in st.session_state:
-    st.session_state.show_view_dialog = False
-if 'view_campaign_id' not in st.session_state:
-    st.session_state.view_campaign_id = None
-if 'show_delete_confirm' not in st.session_state:
-    st.session_state.show_delete_confirm = False
-if 'delete_campaign_id' not in st.session_state:
-    st.session_state.delete_campaign_id = None
-if 'show_team_assignment' not in st.session_state:
-    st.session_state.show_team_assignment = False
-if 'team_campaign_id' not in st.session_state:
-    st.session_state.team_campaign_id = None
-if 'show_evaluation_matrix' not in st.session_state:
-    st.session_state.show_evaluation_matrix = False
-if 'matrix_campaign_id' not in st.session_state:
-    st.session_state.matrix_campaign_id = None
-if 'matrix_group_id' not in st.session_state:
-    st.session_state.matrix_group_id = None
-
+State.init()
 st.write(st.session_state)
 
 st.title(f"{ICONS['dashboard']} Campaign Management")
@@ -85,52 +36,7 @@ st.write("Create and manage performance evaluation campaigns")
 
 # Create New Campaign Dialog
 if query_params.get("create") == "true":
-    with st.form("create_campaign_form"):
-        st.subheader(f"{ICONS['add']} Create New Campaign")
-        
-        name = st.text_input("Campaign Name*", placeholder="e.g., Q1 2024 Performance Review")
-        description = st.text_area("Description*", placeholder="Enter campaign description")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input("Start Date*", value=datetime.now())
-        with col2:
-            end_date = st.date_input("End Date", value=None)
-        
-        comment = st.text_area("Additional Comments (optional)", placeholder="Any additional notes about this campaign")
-        
-        col_submit, col_cancel = st.columns(2)
-        with col_submit:
-            submitted = st.form_submit_button("Create Campaign", type="primary", use_container_width=True)
-        with col_cancel:
-            cancelled = st.form_submit_button("Cancel", use_container_width=True)
-        
-        if submitted:
-            if not name or not description:
-                st.error(f"{ICONS['error']} Please fill in all required fields (marked with *)")
-            else:
-                # Convert dates to datetime
-                start_datetime = datetime.combine(start_date, datetime.min.time())
-                end_datetime = datetime.combine(end_date, datetime.min.time()) if end_date else None
-                
-                campaign_id = create_campaign(
-                    name=name,
-                    description=description,
-                    start_date=start_datetime,
-                    end_date=end_datetime,
-                    comment=comment if comment else None
-                )
-                
-                if campaign_id:
-                    st.success(f"{ICONS['check']} Campaign '{name}' created successfully!")
-                    query_params.clear()
-                    st.rerun()
-                else:
-                    st.error(f"{ICONS['error']} Failed to create campaign. Campaign name might already exist.")
-        
-        if cancelled:
-            query_params.clear()
-            st.rerun()
+    CreateNewCampaignPage(query_params).create()
 
 # Edit Campaign Dialog
 elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:

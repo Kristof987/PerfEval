@@ -1,2 +1,4 @@
 streamlit>=1.30
 psycopg2-binary
+streamlit
+pandas

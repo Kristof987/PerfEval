@@ -80,7 +80,7 @@ admin_1 = st.Page(
 admin_2 = st.Page("admin/reports.py", title="Reports", icon=":material/security:")
 
 hr_campaigns = st.Page(
-    "ui/campaign_page.py",
+    "ui/campaign_pages/campaign_page.py",
     title="Campaigns",
     icon=":material/campaign:"
 )
