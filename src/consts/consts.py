@@ -33,3 +33,10 @@ ICONS = {
     "lightbulb": ":material/lightbulb:",
     "select_all": ":material/select_all:"
 }
+
+TEMPLATE_COLUMNS = [
+    "Employee Name",
+    "Employee Email Address",
+    "Employee Organisation Role",
+    "Employee System Role",
+]

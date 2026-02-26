@@ -15,6 +15,8 @@ class Defaults:
     show_evaluation_matrix: bool = False
     matrix_campaign_id: int | None = None
     matrix_group_id: int | None = None
+    show_role_form_mapping: bool = False
+    role_form_campaign_id: int | None = None
 
 class State:
     @staticmethod

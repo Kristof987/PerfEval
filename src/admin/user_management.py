@@ -1,12 +1,13 @@
 import streamlit as st
 from database.system_users import (
-    add_system_user, 
-    get_all_system_users, 
+    add_system_user,
+    get_all_system_users,
     delete_system_user,
     get_system_roles,
     add_system_permission,
     add_system_role,
-    get_system_permissions
+    get_system_permissions,
+    get_all_employees
 )
 
 st.header("User Management")
@@ -32,6 +33,8 @@ with tab1:
             with col1:
                 st.write(f"**{user['name']}** (@{user['username']})")
                 st.caption(f"Email: {user['email']}")
+                if user['employee_name']:
+                    st.caption(f"👤 Linked to employee: {user['employee_name']}")
             
             with col2:
                 role_display = user['role_name'] if user['role_name'] else "No role"
@@ -97,6 +100,23 @@ with tab4:
             username = st.text_input("Username*", help="Login username (will be same as name by default)")
             email = st.text_input("Email*")
             
+            # Get employees for selection
+            employees = get_all_employees()
+            
+            employee_id = None
+            if employees:
+                employee_options = {"None (No linked employee)": None}
+                for emp in employees:
+                    employee_options[f"{emp['name']} ({emp['email']})"] = emp['id']
+                selected_employee = st.selectbox(
+                    "Link to Employee (optional)",
+                    options=list(employee_options.keys()),
+                    help="Link this system user to an existing employee record"
+                )
+                employee_id = employee_options[selected_employee]
+            else:
+                st.info("No employees found. You can still create a system user without linking to an employee.")
+            
             roles = get_system_roles()
             if roles:
                 role_options = {role['name']: role['id'] for role in roles}
@@ -122,7 +142,8 @@ with tab4:
                         username=final_username,
                         email=email,
                         sys_szerep_id=role_id,
-                        current_user_role=st.session_state.role
+                        current_user_role=st.session_state.role,
+                        employee_id=employee_id
                     )
                     
                     if success:

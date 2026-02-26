@@ -2,18 +2,11 @@ import streamlit as st
 
 from database.init_tables import init_databases
 from consts.consts import ROLES
-from database.login import init_db
-from services.auth import login_user
 
 if "role" not in st.session_state:
     st.session_state.role = None
 
 # Initialize database on app start
-try:
-    init_db()
-except Exception as e:
-    st.error(f"Database init_db() failed: {e}")
-
 try:
     init_databases()
 except Exception as e:
@@ -40,11 +33,12 @@ def login():
                 # Use the role from system_users
                 role = user_data['role_name'] if user_data['role_name'] else "Employee"
                 
-                login_user(user_data['username'], role, user_data['email'])
+                # Set session state (last_login is already updated in validate_system_user)
                 st.session_state.role = role
                 st.session_state.name = user_data['name']
                 st.session_state.username = user_data['username']
                 st.session_state.email = user_data['email']
+                st.session_state.employee_id = user_data['employee_id']
                 st.rerun()
             else:
                 st.error("Invalid username. Please contact your administrator to create a system account.")
@@ -72,6 +66,11 @@ employee_2 = st.Page(
     "employee/profile.py", title="Profile", icon=":material/bug_report:",
     default=True,
 )
+employee_3 = st.Page(
+    "employee/forms.py",
+    title="Forms",
+    icon=":material/assignment:"
+)
 admin_1 = st.Page(
     "admin/user_management.py",
     title="User Management",
@@ -87,14 +86,21 @@ hr_campaigns = st.Page(
 
 hr_survey_builder = st.Page(
     "hr/survey_builder.py",
-    title="Survey Builder",
+    title="Form Builder",
     icon=":material/edit_note:"
 )
 
+hr_org_page = st.Page(
+    "ui/org_info.py",
+    title="Organisation Information",
+    icon=":material/badge:"
+)
+
 account_pages = [logout_page, settings, manage_teams]
-welcome_pages = [employee_1, employee_2]
+welcome_pages = [employee_1, employee_2, employee_3]
 admin_pages = [admin_1, admin_2]
 hr_pages = [hr_campaigns, hr_survey_builder]
+org_pages = [hr_org_page]
 
 st.title("TÉR Project")
 
@@ -102,8 +108,10 @@ page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
     page_dict["Welcome"] = welcome_pages
 if st.session_state.role == "Admin":
+    page_dict["Organisation"] = org_pages
     page_dict["Admin"] = admin_pages
 if st.session_state.role == "HR employee":
+    page_dict["Organisation"] = org_pages
     page_dict["HR"] = hr_pages
 
 if len(page_dict) > 0:

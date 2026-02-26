@@ -268,6 +268,45 @@ def init_campaign_groups():
         cursor.close()
         connection.close()
 
+def init_campaign_role_form_defaults():
+    """Initialize table mapping campaign role-pair defaults to forms."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'campaign_role_form_defaults'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE public.campaign_role_form_defaults
+                (
+                    campaign_id INTEGER NOT NULL REFERENCES public.campaign(id) ON DELETE CASCADE,
+                    evaluator_role VARCHAR(255) NOT NULL,
+                    evaluatee_role VARCHAR(255) NOT NULL,
+                    form_id INTEGER NOT NULL REFERENCES public.form(id) ON DELETE RESTRICT,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (campaign_id, evaluator_role, evaluatee_role)
+                )
+            """)
+
+        connection.commit()
+
+    except Exception as e:
+        connection.rollback()
+        print("init_campaign_role_form_defaults ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
 def init_system_permissions():
     """Initialize system permissions table"""
     connection = get_connection()
@@ -366,8 +405,10 @@ def init_system_users():
                     name VARCHAR(255) NOT NULL,
                     username VARCHAR(255) NOT NULL UNIQUE,
                     email VARCHAR(255) NOT NULL UNIQUE,
+                    employee_id INTEGER REFERENCES public.organisation_employees(id) ON DELETE CASCADE,
                     sys_szerep_id INTEGER REFERENCES public.system_roles(id),
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP
                 )
             """)
 
@@ -390,6 +431,7 @@ def init_databases():
     init_form()
     init_evaluation()
     init_campaign_groups()
+    init_campaign_role_form_defaults()
     init_system_permissions()
     init_system_roles()
     init_system_users()

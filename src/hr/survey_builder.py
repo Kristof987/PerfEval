@@ -1,387 +1,383 @@
 import streamlit as st
 import json
-import pandas as pd
+import uuid
 from database.connection import get_connection
 
-st.title("📝 Survey Builder")
-st.write("Create and manage performance evaluation questionnaires")
+# ─── Page header ──────────────────────────────────────────────────────────────
+st.title("📋 Form Builder")
+st.write("Create and manage performance evaluation forms with sections and questions.")
 
-# Initialize session state
-if "current_survey_id" not in st.session_state:
-    st.session_state.current_survey_id = None
+# ─── Session state ────────────────────────────────────────────────────────────
+if "fb_current_form_id" not in st.session_state:
+    st.session_state.fb_current_form_id = None
 
-# Hardcoded groups for testing
-AVAILABLE_GROUPS = [
-    "Development Team",
-    "Design Team",
-    "Marketing Team",
-    "Sales Team",
-    "HR Team",
-    "Management",
-    "All Employees"
-]
+# ─── Constants ────────────────────────────────────────────────────────────────
+QUESTION_TYPES = {
+    "text":            ("📝", "Text Response (open-ended)"),
+    "multiple_choice": ("☑️", "Multiple Choice"),
+    "rating":          ("⭐", "Rating Scale"),
+}
 
-def get_all_surveys():
-    """Fetch all surveys from database"""
+# ─── Data helpers ─────────────────────────────────────────────────────────────
+
+def _uid() -> str:
+    return str(uuid.uuid4())[:8]
+
+
+def new_section(title: str) -> dict:
+    return {"id": _uid(), "title": title, "questions": []}
+
+
+def new_question(text: str, qtype: str, required: bool = True,
+                 options: list = None, rating_min: int = 1, rating_max: int = 5) -> dict:
+    q: dict = {"id": _uid(), "text": text, "type": qtype, "required": required}
+    if qtype == "multiple_choice":
+        q["options"] = options or []
+    elif qtype == "rating":
+        q["rating_min"] = rating_min
+        q["rating_max"] = rating_max
+    return q
+
+
+def migrate_content(raw) -> dict:
+    """Convert old flat-list questions format to the new {sections:[...]} format."""
+    if isinstance(raw, list):
+        return {
+            "sections": [
+                {"id": "legacy", "title": "General", "questions": raw}
+            ]
+        }
+    if isinstance(raw, dict) and "sections" in raw:
+        return raw
+    return {"sections": []}
+
+
+# ─── Database helpers ─────────────────────────────────────────────────────────
+
+def db_get_all_forms() -> list:
     try:
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            SELECT id, uuid, name, description, questions
-            FROM form
-            ORDER BY id DESC
-        """)
-        surveys = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        return surveys
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, description FROM form ORDER BY id DESC")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return rows
     except Exception as e:
-        st.error(f"Error fetching surveys: {e}")
+        st.error(f"Error fetching forms: {e}")
         return []
 
-def create_survey(name, description):
-    """Create new survey in database"""
+
+def db_create_form(name: str, description: str):
     try:
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO form (name, description, questions)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (name, description, json.dumps([])))
-        survey_id = cursor.fetchone()[0]
-        connection.commit()
-        cursor.close()
-        connection.close()
-        return survey_id
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO form (name, description, questions) VALUES (%s, %s, %s) RETURNING id",
+            (name, description, json.dumps({"sections": []}))
+        )
+        form_id = cur.fetchone()[0]
+        conn.commit(); cur.close(); conn.close()
+        return form_id
     except Exception as e:
-        st.error(f"Error creating survey: {e}")
+        st.error(f"Error creating form: {e}")
         return None
 
-def get_survey_by_id(survey_id):
-    """Get a specific survey by ID"""
+
+def db_get_form(form_id: int):
     try:
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            SELECT id, uuid, name, description, questions
-            FROM form
-            WHERE id = %s
-        """, (survey_id,))
-        survey = cursor.fetchone()
-        cursor.close()
-        connection.close()
-        return survey
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, description, questions FROM form WHERE id = %s", (form_id,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        return row
     except Exception as e:
-        st.error(f"Error fetching survey: {e}")
+        st.error(f"Error loading form: {e}")
         return None
 
-def add_question_to_survey(survey_id, question):
-    """Add a question to an existing survey"""
+
+def db_save_form(form_id: int, content: dict) -> bool:
     try:
-        survey = get_survey_by_id(survey_id)
-        if not survey:
-            return False
-        
-        # JSONB is already a list from PostgreSQL
-        questions = survey[4] if survey[4] else []
-        questions.append(question)
-        
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            UPDATE form
-            SET questions = %s
-            WHERE id = %s
-        """, (json.dumps(questions), survey_id))
-        connection.commit()
-        cursor.close()
-        connection.close()
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE form SET questions = %s WHERE id = %s",
+                    (json.dumps(content), form_id))
+        conn.commit(); cur.close(); conn.close()
         return True
     except Exception as e:
-        st.error(f"Error adding question: {e}")
+        st.error(f"Error saving form: {e}")
         return False
 
-def update_survey_questions(survey_id, questions):
-    """Update all questions for a survey"""
+
+def db_delete_form(form_id: int) -> bool:
     try:
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("""
-            UPDATE form
-            SET questions = %s
-            WHERE id = %s
-        """, (json.dumps(questions), survey_id))
-        connection.commit()
-        cursor.close()
-        connection.close()
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM form WHERE id = %s", (form_id,))
+        conn.commit(); cur.close(); conn.close()
         return True
     except Exception as e:
-        st.error(f"Error updating questions: {e}")
+        st.error(f"Error deleting form: {e}")
         return False
 
-def delete_survey(survey_id):
-    """Delete a survey"""
-    try:
-        connection = get_connection()
-        cursor = connection.cursor()
-        cursor.execute("DELETE FROM form WHERE id = %s", (survey_id,))
-        connection.commit()
-        cursor.close()
-        connection.close()
-        return True
-    except Exception as e:
-        st.error(f"Error deleting survey: {e}")
-        return False
 
-st.write("---")
+# ─── UI ───────────────────────────────────────────────────────────────────────
 
-# View Mode Toggle
-tab1, tab2 = st.tabs(["📋 Manage Surveys", "➕ Create New Survey"])
+st.divider()
+tab_list, tab_new = st.tabs(["📋 My Forms", "➕ New Form"])
 
-with tab2:
-    # Create New Survey
-    st.subheader("Create New Survey")
-    
-    with st.form("create_survey"):
-        new_title = st.text_input("Survey Title", 
-                              placeholder="e.g., Q1 2024 Performance Review")
-        new_description = st.text_area("Survey Description",
-                                   placeholder="Describe the purpose of this survey...")
-        
-        if st.form_submit_button("Create Survey", type="primary"):
-            if not new_title:
-                st.error("❌ Please enter a survey title!")
+# ── New Form tab ───────────────────────────────────────────────────────────────
+with tab_new:
+    st.subheader("Create New Form")
+    with st.form("fb_create_form"):
+        nf_title = st.text_input("Form title *", placeholder="e.g., Q1 2024 Performance Review")
+        nf_desc  = st.text_area("Description", placeholder="Describe the purpose of this form…")
+        if st.form_submit_button("Create Form", type="primary"):
+            if not nf_title.strip():
+                st.error("❌ Please enter a form title.")
             else:
-                survey_id = create_survey(new_title, new_description)
-                if survey_id:
-                    st.success(f"✅ Survey '{new_title}' created successfully!")
-                    st.session_state.current_survey_id = survey_id
+                fid = db_create_form(nf_title.strip(), nf_desc.strip())
+                if fid:
+                    st.success(f"✅ Form **{nf_title}** created!")
+                    st.session_state.fb_current_form_id = fid
                     st.rerun()
 
-with tab1:
-    # List all surveys
-    st.subheader("Existing Surveys")
-    
-    surveys = get_all_surveys()
-    
-    if not surveys:
-        st.info("No surveys created yet. Go to 'Create New Survey' tab to create one.")
-    else:
-        # Survey selector
-        survey_options = {f"{s[2]} (ID: {s[0]})": s[0] for s in surveys}
-        selected_survey_key = st.selectbox(
-            "Select a survey to edit:",
-            options=list(survey_options.keys()),
-            index=0 if st.session_state.current_survey_id is None else 
-                  list(survey_options.values()).index(st.session_state.current_survey_id) 
-                  if st.session_state.current_survey_id in survey_options.values() else 0
-        )
-        
-        selected_survey_id = survey_options[selected_survey_key]
-        st.session_state.current_survey_id = selected_survey_id
-        
-        survey = get_survey_by_id(selected_survey_id)
-        
-        if survey:
-            survey_id, survey_uuid, survey_name, survey_desc, questions_json = survey
-            # JSONB is already a list/dict from PostgreSQL, no need to parse
-            questions = questions_json if questions_json else []
-            
-            # Survey info display
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"**Title:** {survey_name}")
-                if survey_desc:
-                    st.write(f"**Description:** {survey_desc}")
-                st.write(f"**Questions:** {len(questions)}")
-            
-            with col2:
-                if st.button("🗑️ Delete Survey", key=f"del_survey_{survey_id}"):
-                    if delete_survey(survey_id):
-                        st.success(f"✅ Survey deleted!")
-                        st.session_state.current_survey_id = None
-                        st.rerun()
-            
-            st.write("---")
-            
-            # Add Question Section
-            st.subheader("❓ Add Question")
-            
-            with st.form(f"add_question_{survey_id}"):
-                question_text = st.text_input("Question Text",
-                                             placeholder="e.g., How would you rate team collaboration?")
-                question_type = st.selectbox("Question Type",
-                                            ["Text Response", "Multiple Choice", "Matrix"])
-                
-                # Show options input for Multiple Choice and Matrix
-                options_text = ""
-                rows_text = ""
-                columns_text = ""
-                
-                if question_type == "Multiple Choice":
-                    st.write("**Multiple Choice Options:**")
-                    options_text = st.text_area(
-                        "Enter options (one per line)",
-                        placeholder="Option 1\nOption 2\nOption 3",
-                        help="Enter each option on a new line"
-                    )
-                elif question_type == "Matrix":
-                    st.write("**Matrix Configuration:**")
-                    col_matrix1, col_matrix2 = st.columns(2)
-                    with col_matrix1:
-                        rows_text = st.text_area(
-                            "Rows (one per line)",
-                            placeholder="Row 1\nRow 2\nRow 3",
-                            help="Enter each row label on a new line"
-                        )
-                    with col_matrix2:
-                        columns_text = st.text_area(
-                            "Columns (one per line)",
-                            placeholder="Column 1\nColumn 2\nColumn 3",
-                            help="Enter each column label on a new line"
-                        )
-                
-                required = st.checkbox("Required Question", value=True)
-                
-                if st.form_submit_button("Add Question"):
-                    if not question_text:
-                        st.error("❌ Please enter a question text!")
-                    elif question_type == "Multiple Choice" and not options_text.strip():
-                        st.error("❌ Please enter at least one option for multiple choice questions!")
-                    elif question_type == "Matrix" and (not rows_text.strip() or not columns_text.strip()):
-                        st.error("❌ Please enter both rows and columns for matrix questions!")
-                    else:
-                        new_question = {
-                            "id": len(questions) + 1,
-                            "text": question_text,
-                            "type": question_type,
-                            "required": required
-                        }
-                        
-                        # Add options for multiple choice
-                        if question_type == "Multiple Choice":
-                            options = [opt.strip() for opt in options_text.split('\n') if opt.strip()]
-                            new_question["options"] = options
-                        # Add rows and columns for matrix
-                        elif question_type == "Matrix":
-                            rows = [row.strip() for row in rows_text.split('\n') if row.strip()]
-                            columns = [col.strip() for col in columns_text.split('\n') if col.strip()]
-                            new_question["rows"] = rows
-                            new_question["columns"] = columns
-                        
-                        if add_question_to_survey(survey_id, new_question):
-                            st.success(f"✅ Question added!")
+# ── My Forms tab ──────────────────────────────────────────────────────────────
+with tab_list:
+    all_forms = db_get_all_forms()
+
+    if not all_forms:
+        st.info("No forms yet. Switch to **➕ New Form** to create one.")
+        st.stop()
+
+    # ── Form selector ──────────────────────────────────────────────────────
+    form_options = {f"{f[1]}  (ID: {f[0]})": f[0] for f in all_forms}
+    default_idx = 0
+    if st.session_state.fb_current_form_id in form_options.values():
+        default_idx = list(form_options.values()).index(st.session_state.fb_current_form_id)
+
+    selected_key = st.selectbox("Select form to edit:", list(form_options.keys()), index=default_idx)
+    selected_id  = form_options[selected_key]
+    st.session_state.fb_current_form_id = selected_id
+
+    form_row = db_get_form(selected_id)
+    if not form_row:
+        st.error("Could not load the selected form.")
+        st.stop()
+
+    form_id, form_name, form_desc, questions_raw = form_row
+    content  = migrate_content(questions_raw)
+    sections = content.get("sections", [])
+
+    # ── Form header card ───────────────────────────────────────────────────
+    with st.container(border=True):
+        hcol1, hcol2 = st.columns([5, 1])
+        with hcol1:
+            st.markdown(f"## {form_name}")
+            if form_desc:
+                st.caption(form_desc)
+            total_q = sum(len(s.get("questions", [])) for s in sections)
+            st.caption(f"**{total_q}** question(s) across **{len(sections)}** section(s)")
+        with hcol2:
+            if st.button("🗑️ Delete form", key=f"del_form_{form_id}"):
+                if db_delete_form(form_id):
+                    st.session_state.fb_current_form_id = None
+                    st.success("Form deleted.")
+                    st.rerun()
+
+    st.write("")
+
+    # ── Sections ──────────────────────────────────────────────────────────
+    for sec_idx, section in enumerate(sections):
+        sec_id    = section.get("id", sec_idx)
+        sec_title = section.get("title", f"Section {sec_idx + 1}")
+        questions = section.get("questions", [])
+
+        with st.container(border=True):
+            # Section title row
+            st.markdown(
+                f"""<div style="background:#4285F4;color:white;padding:8px 14px;
+                border-radius:6px;font-weight:600;font-size:1.05rem;margin-bottom:10px">
+                📂 {sec_title}</div>""",
+                unsafe_allow_html=True
+            )
+
+            sec_ctrl1, sec_ctrl2 = st.columns([6, 1])
+            with sec_ctrl2:
+                if st.button("🗑️ Section", key=f"del_sec_{form_id}_{sec_idx}",
+                             help="Delete this section and all its questions"):
+                    sections.pop(sec_idx)
+                    content["sections"] = sections
+                    db_save_form(form_id, content)
+                    st.rerun()
+
+            # Rename section
+            with st.expander("✏️ Rename section", expanded=False):
+                with st.form(f"fb_rename_sec_{form_id}_{sec_idx}"):
+                    new_sec_name = st.text_input("New section name", value=sec_title,
+                                                 label_visibility="collapsed")
+                    if st.form_submit_button("Rename"):
+                        if new_sec_name.strip():
+                            sections[sec_idx]["title"] = new_sec_name.strip()
+                            content["sections"] = sections
+                            db_save_form(form_id, content)
                             st.rerun()
-            
-            st.write("---")
-            
-            # Display and manage existing questions
-            st.subheader("📝 Questions")
-            
-            if questions:
-                st.write(f"**Total Questions:** {len(questions)}")
-                st.write("")
-                
-                for idx, question in enumerate(questions):
-                    with st.expander(f"**Question {idx + 1}:** {question['text'][:50]}...", expanded=False):
-                        col1, col2 = st.columns([5, 1])
-                        
-                        with col1:
-                            st.write(f"**Question:** {question['text']}")
-                            st.write(f"**Type:** {question['type']}")
-                            st.write(f"**Required:** {'Yes' if question.get('required', True) else 'No'}")
-                            
-                            # Display options for multiple choice
-                            if question['type'] == "Multiple Choice" and "options" in question:
-                                st.write("**Options:**")
-                                for opt_idx, option in enumerate(question['options'], 1):
-                                    st.write(f"  {opt_idx}. {option}")
-                            
-                            # Display rows and columns for matrix
-                            elif question['type'] == "Matrix":
-                                if "rows" in question and "columns" in question:
-                                    col_m1, col_m2 = st.columns(2)
-                                    with col_m1:
-                                        st.write("**Rows:**")
-                                        for row_idx, row in enumerate(question['rows'], 1):
-                                            st.write(f"  {row_idx}. {row}")
-                                    with col_m2:
-                                        st.write("**Columns:**")
-                                        for col_idx, col in enumerate(question['columns'], 1):
-                                            st.write(f"  {col_idx}. {col}")
-                        
-                        with col2:
-                            # Move up button
-                            if idx > 0:
-                                if st.button("⬆️", key=f"up_{survey_id}_{idx}", help="Move up"):
-                                    questions[idx], questions[idx-1] = questions[idx-1], questions[idx]
-                                    # Reindex questions
-                                    for i, q in enumerate(questions, 1):
-                                        q['id'] = i
-                                    update_survey_questions(survey_id, questions)
-                                    st.rerun()
-                            
-                            # Move down button
-                            if idx < len(questions) - 1:
-                                if st.button("⬇️", key=f"down_{survey_id}_{idx}", help="Move down"):
-                                    questions[idx], questions[idx+1] = questions[idx+1], questions[idx]
-                                    # Reindex questions
-                                    for i, q in enumerate(questions, 1):
-                                        q['id'] = i
-                                    update_survey_questions(survey_id, questions)
-                                    st.rerun()
-                            
-                            # Delete button
-                            if st.button("🗑️", key=f"delete_q_{survey_id}_{idx}", help="Delete question"):
-                                questions.remove(question)
-                                # Reindex questions
-                                for i, q in enumerate(questions, 1):
-                                    q['id'] = i
-                                update_survey_questions(survey_id, questions)
-                                st.rerun()
-                
-                st.write("---")
-                
-                # Preview Section
-                with st.expander("👁️ Preview Survey", expanded=False):
-                    st.subheader(survey_name)
-                    if survey_desc:
-                        st.write(survey_desc)
-                    
-                    st.write("---")
-                    
-                    for idx, question in enumerate(questions, 1):
-                        question_label = f"{idx}. {question['text']}"
-                        if question.get('required', True):
-                            question_label += " *"
-                        
-                        st.write(f"**{question_label}**")
-                        
-                        if question['type'] == "Text Response":
-                            st.text_area("Your answer", key=f"preview_text_{idx}", disabled=True, height=100)
-                        elif question['type'] == "Multiple Choice":
-                            if "options" in question:
-                                st.radio("Select one:", question['options'], key=f"preview_mc_{idx}", disabled=True)
-                        elif question['type'] == "Matrix":
-                            if "rows" in question and "columns" in question:
-                                # Create a scrollable matrix using st.dataframe
-                                import pandas as pd
-                                
-                                # Create empty dataframe with rows and columns
-                                matrix_data = {}
-                                for col in question['columns']:
-                                    matrix_data[col] = [''] * len(question['rows'])
-                                
-                                df = pd.DataFrame(matrix_data, index=question['rows'])
-                                
-                                # Display as dataframe with scrolling
-                                st.dataframe(
-                                    df,
-                                    use_container_width=True,
-                                    height=min(300, 50 + len(question['rows']) * 35)
-                                )
-                        
-                        st.write("")
+
+            st.divider()
+
+            # Questions list
+            if not questions:
+                st.caption("_No questions yet in this section._")
             else:
-                st.info("👆 No questions added yet. Use the form above to add questions.")
+                for q_idx, q in enumerate(questions):
+                    type_icon  = QUESTION_TYPES.get(q.get("type", "text"), ("❓", "Unknown"))[0]
+                    type_label = QUESTION_TYPES.get(q.get("type", "text"), ("❓", "Unknown"))[1]
+                    req_star   = " \\*" if q.get("required") else ""
+
+                    qcol1, qcol2 = st.columns([10, 1])
+                    with qcol1:
+                        st.markdown(f"{type_icon} **{q['text']}{req_star}**")
+                        st.caption(f"_{type_label}_")
+
+                        if q.get("type") == "multiple_choice" and q.get("options"):
+                            for opt in q["options"]:
+                                st.write(f"&nbsp;&nbsp;○ {opt}")
+                        elif q.get("type") == "rating":
+                            lo = q.get("rating_min", 1)
+                            hi = q.get("rating_max", 5)
+                            scale_str = "  ".join(str(i) for i in range(lo, hi + 1))
+                            st.markdown(
+                                f"<div style='display:flex;gap:6px;margin:4px 0'>"
+                                + "".join(
+                                    f"<span style='background:#f0f2f6;border-radius:50%;width:30px;"
+                                    f"height:30px;display:flex;align-items:center;justify-content:center;"
+                                    f"font-size:0.85rem'>{i}</span>"
+                                    for i in range(lo, hi + 1)
+                                )
+                                + "</div>",
+                                unsafe_allow_html=True
+                            )
+                    with qcol2:
+                        if st.button("🗑️", key=f"del_q_{form_id}_{sec_idx}_{q_idx}",
+                                     help="Delete question"):
+                            sections[sec_idx]["questions"].pop(q_idx)
+                            content["sections"] = sections
+                            db_save_form(form_id, content)
+                            st.rerun()
+
+                    st.write("")
+
+            # ── Add Question form (inside expander for this section) ───────
+            with st.expander(f"➕ Add question to \"{sec_title}\"", expanded=False):
+                with st.form(f"fb_add_q_{form_id}_{sec_idx}"):
+                    aq_text = st.text_input(
+                        "Question text *",
+                        placeholder="Type your question here…"
+                    )
+                    aq_type = st.selectbox(
+                        "Question type",
+                        options=list(QUESTION_TYPES.keys()),
+                        format_func=lambda t: f"{QUESTION_TYPES[t][0]}  {QUESTION_TYPES[t][1]}"
+                    )
+                    aq_required = st.checkbox("Required", value=True)
+
+                    st.write("---")
+                    st.caption("**Multiple Choice** — fill options below (one per line):")
+                    aq_options_raw = st.text_area(
+                        "Options (one per line)",
+                        placeholder="Option A\nOption B\nOption C",
+                        label_visibility="collapsed"
+                    )
+
+                    st.caption("**Rating Scale** — set lower and upper bound:")
+                    rc1, rc2 = st.columns(2)
+                    with rc1:
+                        aq_rating_min = st.number_input("Min", min_value=0, max_value=9, value=1)
+                    with rc2:
+                        aq_rating_max = st.number_input("Max", min_value=1, max_value=10, value=5)
+
+                    if st.form_submit_button("Add Question", type="primary"):
+                        if not aq_text.strip():
+                            st.error("❌ Please enter a question text.")
+                        elif aq_type == "multiple_choice" and not aq_options_raw.strip():
+                            st.error("❌ Please enter at least one option.")
+                        elif aq_type == "rating" and aq_rating_min >= aq_rating_max:
+                            st.error("❌ Min value must be less than Max value.")
+                        else:
+                            opts = (
+                                [o.strip() for o in aq_options_raw.splitlines() if o.strip()]
+                                if aq_type == "multiple_choice" else None
+                            )
+                            nq = new_question(
+                                text=aq_text.strip(),
+                                qtype=aq_type,
+                                required=aq_required,
+                                options=opts,
+                                rating_min=int(aq_rating_min),
+                                rating_max=int(aq_rating_max),
+                            )
+                            sections[sec_idx]["questions"].append(nq)
+                            content["sections"] = sections
+                            if db_save_form(form_id, content):
+                                st.success("✅ Question added!")
+                                st.rerun()
+
+        st.write("")  # spacing between section cards
+
+    # ── Add Section form ──────────────────────────────────────────────────
+    st.divider()
+    with st.form(f"fb_add_sec_{form_id}"):
+        ns_col1, ns_col2 = st.columns([4, 1])
+        with ns_col1:
+            new_sec_title = st.text_input(
+                "New section name",
+                placeholder="e.g., Leadership Skills",
+                label_visibility="collapsed"
+            )
+        with ns_col2:
+            add_sec_btn = st.form_submit_button("➕ Add Section", type="secondary",
+                                                use_container_width=True)
+        if add_sec_btn:
+            if not new_sec_title.strip():
+                st.error("❌ Please enter a section name.")
+            else:
+                sections.append(new_section(new_sec_title.strip()))
+                content["sections"] = sections
+                if db_save_form(form_id, content):
+                    st.success(f"✅ Section **{new_sec_title}** added!")
+                    st.rerun()
+
+    # ── Preview ───────────────────────────────────────────────────────────
+    if sections and any(s.get("questions") for s in sections):
+        st.divider()
+        with st.expander("👁️ Form Preview", expanded=False):
+            st.markdown(f"## {form_name}")
+            if form_desc:
+                st.write(form_desc)
+            st.divider()
+
+            q_global = 1
+            for section in sections:
+                st.markdown(
+                    f"""<div style="background:#4285F4;color:white;padding:6px 12px;
+                    border-radius:6px;font-weight:600;margin:12px 0 8px 0">
+                    {section['title']}</div>""",
+                    unsafe_allow_html=True
+                )
+                for q in section.get("questions", []):
+                    req_mark = " *" if q.get("required") else ""
+                    st.markdown(f"**{q_global}. {q['text']}{req_mark}**")
+
+                    if q.get("type") == "text":
+                        st.text_area("Your answer", key=f"prev_t_{q['id']}", disabled=True, height=90)
+                    elif q.get("type") == "multiple_choice":
+                        for opt in q.get("options", []):
+                            st.write(f"○ {opt}")
+                    elif q.get("type") == "rating":
+                        lo, hi = q.get("rating_min", 1), q.get("rating_max", 5)
+                        st.slider(
+                            "Rating", min_value=lo, max_value=hi,
+                            value=lo, key=f"prev_r_{q['id']}", disabled=True
+                        )
+                    st.write("")
+                    q_global += 1

@@ -12,6 +12,7 @@ from hr.campaigns import (
     get_campaign_evaluations,
     get_all_groups,
     get_all_forms,
+    get_organisation_roles,
     get_campaign_groups,
     assign_group_to_campaign,
     remove_group_from_campaign,
@@ -19,7 +20,10 @@ from hr.campaigns import (
     get_campaign_group_evaluations,
     create_evaluation,
     delete_evaluation,
-    save_evaluations_batch
+    save_evaluations_batch,
+    get_campaign_role_form_defaults,
+    upsert_campaign_role_form_defaults,
+    get_employee_roles_map
 )
 from consts.consts import ICONS
 from ui.campaign_pages.create_new_campaign_page import CreateNewCampaignPage
@@ -29,7 +33,47 @@ from ui.state.session_state import State
 query_params = st.query_params
 
 State.init()
-st.write(st.session_state)
+
+
+def build_default_role_form_map(roles, forms):
+    """
+    Build default role->role form mapping.
+    Self-assessment uses "{role} self-assessment" if available.
+    """
+    if not roles or not forms:
+        return {}
+
+    form_name_to_id = {form["name"]: form["id"] for form in forms}
+    default_form_id = forms[0]["id"]
+
+    role_form_map = {}
+    for evaluator_role in roles:
+        for evaluatee_role in roles:
+            if evaluator_role == evaluatee_role:
+                self_form_name = f"{evaluator_role} self-assessment"
+                role_form_map[(evaluator_role, evaluatee_role)] = form_name_to_id.get(
+                    self_form_name, default_form_id
+                )
+            else:
+                role_form_map[(evaluator_role, evaluatee_role)] = default_form_id
+
+    return role_form_map
+
+
+def ensure_role_form_map(campaign_id, roles, forms):
+    map_key = f"role_form_map_{campaign_id}"
+    default_map = build_default_role_form_map(roles, forms)
+    stored_map = get_campaign_role_form_defaults(campaign_id)
+    session_map = st.session_state.get(map_key, {})
+    merged_map = {**default_map, **stored_map, **session_map}
+
+    for pair, form_id in default_map.items():
+        if not merged_map.get(pair):
+            merged_map[pair] = form_id
+
+    st.session_state[map_key] = merged_map
+    upsert_campaign_role_form_defaults(campaign_id, merged_map)
+    return map_key
 
 st.title(f"{ICONS['dashboard']} Campaign Management")
 st.write("Create and manage performance evaluation campaigns")
@@ -191,6 +235,59 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
             st.session_state.team_campaign_id = None
             st.rerun()
 
+# Role Form Mapping Dialog
+elif st.session_state.show_role_form_mapping and st.session_state.role_form_campaign_id:
+    campaign = get_campaign_by_id(st.session_state.role_form_campaign_id)
+
+    if campaign:
+        st.subheader(f"{ICONS['matrix']} Role → Role Default Forms: {campaign['name']}")
+        roles = get_organisation_roles()
+        forms = get_all_forms()
+
+        if not forms:
+            st.error(f"{ICONS['error']} No forms available. Please create an evaluation form first.")
+        elif not roles:
+            st.error(f"{ICONS['error']} No organisation roles available. Please create roles first.")
+        else:
+            role_names = [role["name"] for role in roles]
+            form_options = {form["name"]: form["id"] for form in forms}
+            form_id_to_name = {form["id"]: form["name"] for form in forms}
+
+            map_key = ensure_role_form_map(st.session_state.role_form_campaign_id, role_names, forms)
+
+            st.caption("Self-assessment default is '{role} self-assessment' when available.")
+            st.write("---")
+
+            for evaluator_role in role_names:
+                with st.expander(f"{evaluator_role} →", expanded=False):
+                    for evaluatee_role in role_names:
+                        current_form_id = st.session_state[map_key].get((evaluator_role, evaluatee_role))
+                        current_form_name = form_id_to_name.get(current_form_id, list(form_options.keys())[0])
+                        selected_form_name = st.selectbox(
+                            f"{evaluator_role} → {evaluatee_role}",
+                            options=list(form_options.keys()),
+                            index=list(form_options.keys()).index(current_form_name),
+                            key=f"role_form_{st.session_state.role_form_campaign_id}_{evaluator_role}_{evaluatee_role}"
+                        )
+                        st.session_state[map_key][(evaluator_role, evaluatee_role)] = form_options[selected_form_name]
+
+            st.write("---")
+            if st.button("Save", type="primary", use_container_width=True):
+                upsert_campaign_role_form_defaults(
+                    st.session_state.role_form_campaign_id,
+                    st.session_state[map_key]
+                )
+                st.success(f"{ICONS['check']} Role-form defaults saved.")
+
+            if st.button("Close", use_container_width=True):
+                upsert_campaign_role_form_defaults(
+                    st.session_state.role_form_campaign_id,
+                    st.session_state[map_key]
+                )
+                st.session_state.show_role_form_mapping = False
+                st.session_state.role_form_campaign_id = None
+                st.rerun()
+
 # Evaluation Matrix Dialog
 elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaign_id and st.session_state.matrix_group_id:
     campaign = get_campaign_by_id(st.session_state.matrix_campaign_id)
@@ -214,22 +311,18 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
         st.write("**Who evaluates whom**")
         st.caption("Rows = Evaluatee (who receives feedback), Columns = Evaluator (who gives feedback)")
         
-        # Form selection
+        # Role-based form selection info
         st.write("---")
-        st.write("**Select Evaluation Form:**")
         forms = get_all_forms()
-        
+        roles = get_organisation_roles()
+
         if not forms:
             st.error(f"{ICONS['error']} No forms available. Please create an evaluation form first.")
+        elif not roles:
+            st.error(f"{ICONS['error']} No organisation roles available. Please create roles first.")
         else:
-            form_options = {f"{form['name']}": form['id'] for form in forms}
-            selected_form_name = st.selectbox(
-                "Form to use for this team*",
-                options=list(form_options.keys()),
-                key="selected_form"
-            )
-            selected_form_id = form_options[selected_form_name]
-            
+            map_key = ensure_role_form_map(st.session_state.matrix_campaign_id, [r["name"] for r in roles], forms)
+            st.info("Forms are selected by evaluator role → evaluatee role defaults. Configure them from the campaign list.")
             st.write("---")
             
             # Display matrix with checkboxes using data_editor for scrolling
@@ -278,7 +371,7 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             if percentage_key not in st.session_state:
                 st.session_state[percentage_key] = 1
             
-            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+            col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
             with col1:
                 if st.button(f"{ICONS['select_all']} Select All", use_container_width=True):
                     # Select everyone evaluates everyone
@@ -334,30 +427,59 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                         out[evaluator] += 1
 
                     st.rerun()
-            
+            with col5:
+                if st.button(f"{ICONS['select_all']} Add self-assessments", use_container_width=True):
+                    for member in members:
+                        st.session_state[matrix_key].add((member['id'], member['id']))
+                    st.rerun()
             st.write("---")
-            
+
+
             # Save and Back buttons
             col_save, col_back = st.columns(2)
             with col_save:
                 if st.button(f"{ICONS['save']} Save Evaluations", type="primary", use_container_width=True):
                     # Convert session state selections to list of tuples
                     assignments = list(st.session_state[matrix_key])
-                    
-                    success = save_evaluations_batch(
-                        st.session_state.matrix_campaign_id,
-                        st.session_state.matrix_group_id,
-                        assignments,
-                        selected_form_id
-                    )
-                    
-                    if success:
-                        st.success(f"{ICONS['check']} Saved {len(assignments)} evaluation assignments with form '{selected_form_name}'!")
-                        # Clear session state for this matrix
-                        del st.session_state[matrix_key]
-                        st.rerun()
+
+                    role_form_map = st.session_state.get(map_key, {}) if roles and forms else {}
+
+                    # Pre-validate: check all employees in assignments have roles
+                    all_employee_ids = list({eid for pair in assignments for eid in pair})
+                    employee_roles_check = get_employee_roles_map(all_employee_ids)
+                    missing_role_ids = [eid for eid in all_employee_ids if not employee_roles_check.get(eid)]
+
+                    if missing_role_ids:
+                        # Find names for missing employees
+                        missing_names = [
+                            m['name'] for m in members if m['id'] in missing_role_ids
+                        ]
+                        st.error(
+                            f"{ICONS['error']} Cannot save: the following employees have no organisation role assigned: "
+                            f"**{', '.join(missing_names)}**. "
+                            f"Please assign roles to these employees before saving evaluations."
+                        )
                     else:
-                        st.error(f"{ICONS['error']} Failed to save evaluations.")
+                        try:
+                            success, error_message = save_evaluations_batch(
+                                st.session_state.matrix_campaign_id,
+                                st.session_state.matrix_group_id,
+                                assignments,
+                                role_form_map
+                            )
+                        except Exception as e:
+                            success = False
+                            error_message = str(e)
+                            st.error(f"{ICONS['error']} {e}")
+
+                        if success:
+                            st.success(f"{ICONS['check']} Saved {len(assignments)} evaluation assignments with role-based forms!")
+                            # Clear session state for this matrix
+                            del st.session_state[matrix_key]
+                            st.rerun()
+                        else:
+                            detail = f" Details: {error_message}" if error_message else ""
+                            st.error(f"{ICONS['error']} Failed to save evaluations.{detail}")
             
             with col_back:
                 if st.button("Back to Teams", use_container_width=True):
@@ -442,7 +564,7 @@ else:
                 st.progress(completion_pct / 100, text=f"Completion: {completion_pct:.0f}%")
                 
                 # Action buttons
-                col_view, col_edit, col_teams, col_toggle, col_delete = st.columns([1, 1, 1, 1, 1])
+                col_view, col_edit, col_teams, col_role_forms, col_toggle, col_delete = st.columns([1, 1, 1, 1, 1, 1])
                 
                 with col_view:
                     if st.button(f"{ICONS['view']} View", key=f"view_{campaign['id']}", use_container_width=True):
@@ -461,8 +583,18 @@ else:
                 
                 with col_teams:
                     if st.button(f"{ICONS['teams']} Teams", key=f"teams_{campaign['id']}", use_container_width=True):
+                        roles = get_organisation_roles()
+                        forms = get_all_forms()
+                        if roles and forms:
+                            ensure_role_form_map(campaign['id'], [r["name"] for r in roles], forms)
                         st.session_state.show_team_assignment = True
                         st.session_state.team_campaign_id = campaign['id']
+                        st.rerun()
+
+                with col_role_forms:
+                    if st.button(f"{ICONS['matrix']} Role Forms", key=f"role_forms_{campaign['id']}", use_container_width=True):
+                        st.session_state.show_role_form_mapping = True
+                        st.session_state.role_form_campaign_id = campaign['id']
                         st.rerun()
                 
                 with col_toggle:
