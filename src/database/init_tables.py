@@ -83,7 +83,7 @@ def init_org_employees():
                     name VARCHAR(255) NOT NULL UNIQUE,
                     email VARCHAR(255) NOT NULL UNIQUE,
                     org_role_id INTEGER REFERENCES public.organisation_roles(id),
-                    org_role_name2 VARCHAR(255),
+                    org_role_name VARCHAR(255),
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)

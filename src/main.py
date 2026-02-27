@@ -79,7 +79,7 @@ admin_1 = st.Page(
 admin_2 = st.Page("admin/reports.py", title="Reports", icon=":material/security:")
 
 hr_campaigns = st.Page(
-    "ui/campaign_pages/campaign_page.py",
+    "ui/pages/campaign_pages/campaign_page.py",
     title="Campaigns",
     icon=":material/campaign:"
 )
@@ -91,7 +91,7 @@ hr_survey_builder = st.Page(
 )
 
 hr_org_page = st.Page(
-    "ui/org_info.py",
+    "ui/pages/organisation/org_info_page.py",
     title="Organisation Information",
     icon=":material/badge:"
 )
@@ -106,7 +106,7 @@ st.title("TÉR Project")
 
 page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
-    page_dict["Welcome"] = welcome_pages
+    page_dict["General"] = welcome_pages
 if st.session_state.role == "Admin":
     page_dict["Organisation"] = org_pages
     page_dict["Admin"] = admin_pages

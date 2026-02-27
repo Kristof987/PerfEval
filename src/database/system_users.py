@@ -116,7 +116,7 @@ def get_all_employees() -> List[Dict]:
     
     try:
         cur.execute("""
-            SELECT id, name, email, org_role_name2
+            SELECT id, name, email, org_role_name
             FROM organisation_employees
             ORDER BY name
         """)

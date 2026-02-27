@@ -16,6 +16,7 @@ QUESTION_TYPES = {
     "text":            ("📝", "Text Response (open-ended)"),
     "multiple_choice": ("☑️", "Multiple Choice"),
     "rating":          ("⭐", "Rating Scale"),
+    "slider_labels":   ("🎚️", "Label Slider"),
 }
 
 # ─── Data helpers ─────────────────────────────────────────────────────────────
@@ -29,13 +30,16 @@ def new_section(title: str) -> dict:
 
 
 def new_question(text: str, qtype: str, required: bool = True,
-                 options: list = None, rating_min: int = 1, rating_max: int = 5) -> dict:
+                 options: list = None, rating_min: int = 1, rating_max: int = 5,
+                 slider_options: list = None) -> dict:
     q: dict = {"id": _uid(), "text": text, "type": qtype, "required": required}
     if qtype == "multiple_choice":
         q["options"] = options or []
     elif qtype == "rating":
         q["rating_min"] = rating_min
         q["rating_max"] = rating_max
+    elif qtype == "slider_labels":
+        q["slider_options"] = slider_options or []
     return q
 
 
@@ -257,6 +261,18 @@ with tab_list:
                                 + "</div>",
                                 unsafe_allow_html=True
                             )
+                        elif q.get("type") == "slider_labels" and q.get("slider_options"):
+                            options = q["slider_options"]
+                            st.markdown(
+                                f"<div style='display:flex;gap:6px;margin:4px 0'>"
+                                + "".join(
+                                    f"<span style='background:#e8f4f8;border-radius:8px;padding:4px 8px;"
+                                    f"font-size:0.8rem'>{opt}</span>"
+                                    for opt in options
+                                )
+                                + "</div>",
+                                unsafe_allow_html=True
+                            )
                     with qcol2:
                         if st.button("🗑️", key=f"del_q_{form_id}_{sec_idx}_{q_idx}",
                                      help="Delete question"):
@@ -269,32 +285,52 @@ with tab_list:
 
             # ── Add Question form (inside expander for this section) ───────
             with st.expander(f"➕ Add question to \"{sec_title}\"", expanded=False):
+                # Session state for selected question type
+                ss_key = f"fb_qtype_{form_id}_{sec_idx}"
+                if ss_key not in st.session_state:
+                    st.session_state[ss_key] = "text"
+
+                aq_type = st.selectbox(
+                    "Question type",
+                    options=list(QUESTION_TYPES.keys()),
+                    format_func=lambda t: f"{QUESTION_TYPES[t][0]}  {QUESTION_TYPES[t][1]}",
+                    key=ss_key
+                )
+
                 with st.form(f"fb_add_q_{form_id}_{sec_idx}"):
                     aq_text = st.text_input(
                         "Question text *",
                         placeholder="Type your question here…"
                     )
-                    aq_type = st.selectbox(
-                        "Question type",
-                        options=list(QUESTION_TYPES.keys()),
-                        format_func=lambda t: f"{QUESTION_TYPES[t][0]}  {QUESTION_TYPES[t][1]}"
-                    )
                     aq_required = st.checkbox("Required", value=True)
 
-                    st.write("---")
-                    st.caption("**Multiple Choice** — fill options below (one per line):")
-                    aq_options_raw = st.text_area(
-                        "Options (one per line)",
-                        placeholder="Option A\nOption B\nOption C",
-                        label_visibility="collapsed"
-                    )
-
-                    st.caption("**Rating Scale** — set lower and upper bound:")
-                    rc1, rc2 = st.columns(2)
-                    with rc1:
-                        aq_rating_min = st.number_input("Min", min_value=0, max_value=9, value=1)
-                    with rc2:
-                        aq_rating_max = st.number_input("Max", min_value=1, max_value=10, value=5)
+                    # Show fields based on selected type
+                    if aq_type == "multiple_choice":
+                        st.caption("**Options** — one per line:")
+                        aq_options_raw = st.text_area(
+                            "Options",
+                            placeholder="Option A\nOption B\nOption C",
+                            label_visibility="collapsed"
+                        )
+                        aq_rating_min, aq_rating_max, aq_slider_labels_raw = 1, 5, ""
+                    elif aq_type == "rating":
+                        st.caption("**Scale range:**")
+                        rc1, rc2 = st.columns(2)
+                        with rc1:
+                            aq_rating_min = st.number_input("Min", min_value=0, max_value=9, value=1)
+                        with rc2:
+                            aq_rating_max = st.number_input("Max", min_value=1, max_value=10, value=5)
+                        aq_options_raw, aq_slider_labels_raw = "", ""
+                    elif aq_type == "slider_labels":
+                        st.caption("**Options** — one per line:")
+                        aq_slider_labels_raw = st.text_area(
+                            "Options",
+                            placeholder="Nagyon jól\nInkább jól\nSemleges\nInkább nem jól\nNem jól",
+                            label_visibility="collapsed"
+                        )
+                        aq_options_raw, aq_rating_min, aq_rating_max = "", 1, 5
+                    else:  # text
+                        aq_options_raw, aq_rating_min, aq_rating_max, aq_slider_labels_raw = "", 1, 5, ""
 
                     if st.form_submit_button("Add Question", type="primary"):
                         if not aq_text.strip():
@@ -303,6 +339,27 @@ with tab_list:
                             st.error("❌ Please enter at least one option.")
                         elif aq_type == "rating" and aq_rating_min >= aq_rating_max:
                             st.error("❌ Min value must be less than Max value.")
+                        elif aq_type == "slider_labels":
+                            # Parse slider options (simple list)
+                            slider_options = [
+                                line.strip()
+                                for line in aq_slider_labels_raw.splitlines()
+                                if line.strip()
+                            ]
+                            if len(slider_options) < 2:
+                                st.error("❌ Please enter at least 2 options.")
+                                st.stop()
+                            nq = new_question(
+                                text=aq_text.strip(),
+                                qtype=aq_type,
+                                required=aq_required,
+                                slider_options=slider_options,
+                            )
+                            sections[sec_idx]["questions"].append(nq)
+                            content["sections"] = sections
+                            if db_save_form(form_id, content):
+                                st.success("✅ Question added!")
+                                st.rerun()
                         else:
                             opts = (
                                 [o.strip() for o in aq_options_raw.splitlines() if o.strip()]
@@ -379,5 +436,15 @@ with tab_list:
                             "Rating", min_value=lo, max_value=hi,
                             value=lo, key=f"prev_r_{q['id']}", disabled=True
                         )
+                    elif q.get("type") == "slider_labels":
+                        options = q.get("slider_options", [])
+                        if options:
+                            st.select_slider(
+                                "Select value",
+                                options=options,
+                                value=options[0],
+                                key=f"prev_sl_{q['id']}",
+                                disabled=True
+                            )
                     st.write("")
                     q_global += 1

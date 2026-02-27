@@ -45,7 +45,7 @@ def import_employees_from_template(uploaded_file: st.runtime.uploaded_file_manag
                 continue
 
             cursor.execute(
-                "INSERT INTO organisation_employees (name, email, org_role_name2) VALUES (%s, %s, %s) RETURNING id",
+                "INSERT INTO organisation_employees (name, email, org_role_name) VALUES (%s, %s, %s) RETURNING id",
                 (name, email, org_role if org_role and org_role.lower() != "nan" else None),
             )
             employee_id = cursor.fetchone()[0]
@@ -170,7 +170,7 @@ def create_employee_and_add_to_system_users(new_emp_name, new_emp_email, new_emp
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO organisation_employees (name, email, org_role_name2) VALUES (%s, %s, %s) RETURNING id",
+        "INSERT INTO organisation_employees (name, email, org_role_name) VALUES (%s, %s, %s) RETURNING id",
         (new_emp_name, new_emp_email, new_emp_role if new_emp_role else None)
     )
     employee_id = cursor.fetchone()[0]
@@ -186,7 +186,7 @@ def get_organisation_employees():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-                   SELECT id, name, email, org_role_name2
+                   SELECT id, name, email, org_role_name
                    FROM organisation_employees
                    ORDER BY name
                    """)

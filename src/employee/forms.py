@@ -2,7 +2,6 @@ import streamlit as st
 
 from database.user_forms import get_user_evaluations, save_evaluation_answers
 
-
 st.header("Forms")
 st.write("View and complete your assigned evaluation forms.")
 
@@ -62,39 +61,58 @@ if selected_evaluation:
     answers = {}
 
     with st.form("submit_form"):
-        for idx, question in enumerate(questions, 1):
-            q_id = question.get("id", idx)
-            q_text = question.get("text", "")
-            q_type = question.get("type", "Text Response")
+        sections = questions.get("sections", [])
+        for section in sections:
+            for idx, question in enumerate(section.get("questions", [])):
+                q_id = question.get("id", idx)
+                q_text = question.get("text", "")
+                q_type = question.get("type", "Text Response")
 
-            st.write(f"**{idx}. {q_text}**")
+                st.write(f"**{idx}. {q_text}**")
 
-            if q_type == "Text Response":
-                answers[q_id] = st.text_area(
-                    "Your answer",
-                    key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
-                )
-            elif q_type == "Multiple Choice":
-                options = question.get("options", [])
-                answers[q_id] = st.radio(
-                    "Select one",
-                    options,
-                    key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
-                )
-            elif q_type == "Matrix":
-                rows = question.get("rows", [])
-                columns = question.get("columns", [])
-                matrix_answers = {}
-                for row in rows:
-                    matrix_answers[row] = st.radio(
-                        row,
-                        columns,
-                        key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}_{row}",
-                        horizontal=True,
+                if q_type == "text":
+                    answers[q_id] = st.text_area(
+                        "Your answer",
+                        key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
                     )
-                answers[q_id] = matrix_answers
+                elif q_type == "multiple_choice":
+                    options = question.get("options", [])
+                    answers[q_id] = st.radio(
+                        "Select one",
+                        options,
+                        key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
+                    )
+                elif q_type == "rating":
+                    lo = question.get("rating_min", 1)
+                    hi = question.get("rating_max", 5)
+                    answers[q_id] = st.slider(
+                        "Rating",
+                        min_value=lo,
+                        max_value=hi,
+                        value=lo,
+                        key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
+                    )
+                elif q_type == "slider_labels":
+                    options = question.get("slider_options", [])
+                    if options:
+                        answers[q_id] = st.select_slider(
+                            "Select value",
+                            options=options,
+                            value=options[0],
+                            key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
+                        )
+                elif q_type == "slider_labels":
+                    options = question.get("slider_options", [])
+                    if options:
+                        selected = st.select_slider(
+                            "Select value",
+                            options=options,
+                            value=options[0],
+                            key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
+                        )
+                        answers[q_id] = selected
 
-            st.write("")
+                st.write("")
 
         submitted = st.form_submit_button("Submit")
         if submitted:

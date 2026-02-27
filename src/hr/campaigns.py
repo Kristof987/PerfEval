@@ -430,7 +430,7 @@ def get_employee_roles_map(employee_ids: List[int]) -> Dict[int, Optional[str]]:
     try:
         cursor.execute("""
             SELECT e.id,
-                   COALESCE(r.name, e.org_role_name2) as role_name
+                   COALESCE(r.name, e.org_role_name) as role_name
             FROM organisation_employees e
             LEFT JOIN organisation_roles r ON e.org_role_id = r.id
             WHERE e.id = ANY(%s)

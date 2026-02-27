@@ -1,4 +1,3 @@
-# app/ui/pages/groups/my_groups_page.py
 import streamlit as st
 
 from persistence.db.connection import get_db
@@ -7,7 +6,6 @@ from services.groups_service import GroupsService
 
 st.title("My Groups")
 
-# services wiring (később ezt tedd di.py-ba)
 service = GroupsService(get_db(), GroupsRepository())
 
 email = st.session_state.get("email")
@@ -50,7 +48,6 @@ with tab1:
                     st.info("No description available.")
 
                 if g.joined_at:
-                    # joined_at could already be datetime; handle both
                     try:
                         st.write(f"**Joined:** {g.joined_at.strftime('%Y-%m-%d %H:%M')}")
                     except Exception:
