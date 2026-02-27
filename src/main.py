@@ -55,7 +55,7 @@ role = st.session_state.role
 
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 settings = st.Page("ui/settings_page.py", title="Settings", icon=":material/settings:")
-manage_teams = st.Page("ui/manage_teams.py", title="My Groups", icon=":material/groups:")
+manage_groups = st.Page("ui/pages/groups/my_groups_page.py", title="My Groups", icon=":material/groups:")
 
 employee_1 = st.Page(
     "employee/dashboard.py",
@@ -96,7 +96,7 @@ hr_org_page = st.Page(
     icon=":material/badge:"
 )
 
-account_pages = [logout_page, settings, manage_teams]
+account_pages = [logout_page, settings, manage_groups]
 welcome_pages = [employee_1, employee_2, employee_3]
 admin_pages = [admin_1, admin_2]
 hr_pages = [hr_campaigns, hr_survey_builder]
