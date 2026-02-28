@@ -1,9 +1,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 import os
-import psycopg2
 from psycopg2.pool import SimpleConnectionPool
-
 
 @dataclass(frozen=True)
 class DbConfig:
@@ -33,7 +31,6 @@ class Database:
                 raise
 
 
-# simple singleton factory (ha nem akarsz DI frameworköt)
 _db: Database | None = None
 
 def get_db() -> Database:

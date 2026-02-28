@@ -6,11 +6,6 @@ from database.system_users import get_system_roles
 
 
 def import_employees_from_template(uploaded_file) -> tuple[int, int]:
-    """
-    Reads uploaded xlsx and inserts employees.
-    Returns: (inserted_count, skipped_count)
-    """
-
     df = pd.read_excel(uploaded_file)
     missing_columns = [col for col in TEMPLATE_COLUMNS if col not in df.columns]
     if missing_columns:

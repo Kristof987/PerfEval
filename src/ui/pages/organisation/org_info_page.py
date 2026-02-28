@@ -194,7 +194,6 @@ def add_employee_modal():
             else:
                 st.warning("Please enter employee name and email.")
 
-    # Cancel button to close the add employee section
     if st.button("❌ Cancel", key="cancel_add_employee"):
         st.session_state.show_add_employee = False
         st.rerun()
@@ -203,7 +202,6 @@ def add_employee_modal():
 with sub_tab2:
     st.subheader("Manage Employees")
 
-    # Initialize session state for showing add employee UI
     if "show_add_employee" not in st.session_state:
         st.session_state.show_add_employee = False
 

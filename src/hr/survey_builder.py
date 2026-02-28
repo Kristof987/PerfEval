@@ -3,15 +3,12 @@ import json
 import uuid
 from database.connection import get_connection
 
-# ─── Page header ──────────────────────────────────────────────────────────────
 st.title("📋 Form Builder")
 st.write("Create and manage performance evaluation forms with sections and questions.")
 
-# ─── Session state ────────────────────────────────────────────────────────────
 if "fb_current_form_id" not in st.session_state:
     st.session_state.fb_current_form_id = None
 
-# ─── Constants ────────────────────────────────────────────────────────────────
 QUESTION_TYPES = {
     "text":            ("📝", "Text Response (open-ended)"),
     "multiple_choice": ("☑️", "Multiple Choice"),
@@ -19,15 +16,11 @@ QUESTION_TYPES = {
     "slider_labels":   ("🎚️", "Label Slider"),
 }
 
-# ─── Data helpers ─────────────────────────────────────────────────────────────
-
 def _uid() -> str:
     return str(uuid.uuid4())[:8]
 
-
 def new_section(title: str) -> dict:
     return {"id": _uid(), "title": title, "questions": []}
-
 
 def new_question(text: str, qtype: str, required: bool = True,
                  options: list = None, rating_min: int = 1, rating_max: int = 5,
@@ -42,9 +35,7 @@ def new_question(text: str, qtype: str, required: bool = True,
         q["slider_options"] = slider_options or []
     return q
 
-
 def migrate_content(raw) -> dict:
-    """Convert old flat-list questions format to the new {sections:[...]} format."""
     if isinstance(raw, list):
         return {
             "sections": [
@@ -54,9 +45,6 @@ def migrate_content(raw) -> dict:
     if isinstance(raw, dict) and "sections" in raw:
         return raw
     return {"sections": []}
-
-
-# ─── Database helpers ─────────────────────────────────────────────────────────
 
 def db_get_all_forms() -> list:
     try:
@@ -69,7 +57,6 @@ def db_get_all_forms() -> list:
     except Exception as e:
         st.error(f"Error fetching forms: {e}")
         return []
-
 
 def db_create_form(name: str, description: str):
     try:
@@ -86,7 +73,6 @@ def db_create_form(name: str, description: str):
         st.error(f"Error creating form: {e}")
         return None
 
-
 def db_get_form(form_id: int):
     try:
         conn = get_connection()
@@ -98,7 +84,6 @@ def db_get_form(form_id: int):
     except Exception as e:
         st.error(f"Error loading form: {e}")
         return None
-
 
 def db_save_form(form_id: int, content: dict) -> bool:
     try:
@@ -112,7 +97,6 @@ def db_save_form(form_id: int, content: dict) -> bool:
         st.error(f"Error saving form: {e}")
         return False
 
-
 def db_delete_form(form_id: int) -> bool:
     try:
         conn = get_connection()
@@ -124,13 +108,9 @@ def db_delete_form(form_id: int) -> bool:
         st.error(f"Error deleting form: {e}")
         return False
 
-
-# ─── UI ───────────────────────────────────────────────────────────────────────
-
 st.divider()
 tab_list, tab_new = st.tabs(["📋 My Forms", "➕ New Form"])
 
-# ── New Form tab ───────────────────────────────────────────────────────────────
 with tab_new:
     st.subheader("Create New Form")
     with st.form("fb_create_form"):
@@ -146,7 +126,6 @@ with tab_new:
                     st.session_state.fb_current_form_id = fid
                     st.rerun()
 
-# ── My Forms tab ──────────────────────────────────────────────────────────────
 with tab_list:
     all_forms = db_get_all_forms()
 
@@ -154,7 +133,6 @@ with tab_list:
         st.info("No forms yet. Switch to **➕ New Form** to create one.")
         st.stop()
 
-    # ── Form selector ──────────────────────────────────────────────────────
     form_options = {f"{f[1]}  (ID: {f[0]})": f[0] for f in all_forms}
     default_idx = 0
     if st.session_state.fb_current_form_id in form_options.values():
@@ -173,7 +151,6 @@ with tab_list:
     content  = migrate_content(questions_raw)
     sections = content.get("sections", [])
 
-    # ── Form header card ───────────────────────────────────────────────────
     with st.container(border=True):
         hcol1, hcol2 = st.columns([5, 1])
         with hcol1:
@@ -191,14 +168,12 @@ with tab_list:
 
     st.write("")
 
-    # ── Sections ──────────────────────────────────────────────────────────
     for sec_idx, section in enumerate(sections):
         sec_id    = section.get("id", sec_idx)
         sec_title = section.get("title", f"Section {sec_idx + 1}")
         questions = section.get("questions", [])
 
         with st.container(border=True):
-            # Section title row
             st.markdown(
                 f"""<div style="background:#4285F4;color:white;padding:8px 14px;
                 border-radius:6px;font-weight:600;font-size:1.05rem;margin-bottom:10px">
@@ -215,7 +190,6 @@ with tab_list:
                     db_save_form(form_id, content)
                     st.rerun()
 
-            # Rename section
             with st.expander("✏️ Rename section", expanded=False):
                 with st.form(f"fb_rename_sec_{form_id}_{sec_idx}"):
                     new_sec_name = st.text_input("New section name", value=sec_title,
@@ -229,7 +203,6 @@ with tab_list:
 
             st.divider()
 
-            # Questions list
             if not questions:
                 st.caption("_No questions yet in this section._")
             else:
@@ -283,9 +256,7 @@ with tab_list:
 
                     st.write("")
 
-            # ── Add Question form (inside expander for this section) ───────
             with st.expander(f"➕ Add question to \"{sec_title}\"", expanded=False):
-                # Session state for selected question type
                 ss_key = f"fb_qtype_{form_id}_{sec_idx}"
                 if ss_key not in st.session_state:
                     st.session_state[ss_key] = "text"
@@ -304,7 +275,6 @@ with tab_list:
                     )
                     aq_required = st.checkbox("Required", value=True)
 
-                    # Show fields based on selected type
                     if aq_type == "multiple_choice":
                         st.caption("**Options** — one per line:")
                         aq_options_raw = st.text_area(
@@ -329,7 +299,7 @@ with tab_list:
                             label_visibility="collapsed"
                         )
                         aq_options_raw, aq_rating_min, aq_rating_max = "", 1, 5
-                    else:  # text
+                    else:
                         aq_options_raw, aq_rating_min, aq_rating_max, aq_slider_labels_raw = "", 1, 5, ""
 
                     if st.form_submit_button("Add Question", type="primary"):
@@ -340,7 +310,6 @@ with tab_list:
                         elif aq_type == "rating" and aq_rating_min >= aq_rating_max:
                             st.error("❌ Min value must be less than Max value.")
                         elif aq_type == "slider_labels":
-                            # Parse slider options (simple list)
                             slider_options = [
                                 line.strip()
                                 for line in aq_slider_labels_raw.splitlines()
@@ -379,9 +348,8 @@ with tab_list:
                                 st.success("✅ Question added!")
                                 st.rerun()
 
-        st.write("")  # spacing between section cards
+        st.write("")
 
-    # ── Add Section form ──────────────────────────────────────────────────
     st.divider()
     with st.form(f"fb_add_sec_{form_id}"):
         ns_col1, ns_col2 = st.columns([4, 1])
@@ -404,7 +372,6 @@ with tab_list:
                     st.success(f"✅ Section **{new_sec_title}** added!")
                     st.rerun()
 
-    # ── Preview ───────────────────────────────────────────────────────────
     if sections and any(s.get("questions") for s in sections):
         st.divider()
         with st.expander("👁️ Form Preview", expanded=False):

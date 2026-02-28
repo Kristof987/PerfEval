@@ -11,7 +11,6 @@ def init_org_groups():
                 """)
     columns = [row[0] for row in cursor.fetchall()]
 
-    # If table doesn't exist or is missing required columns, recreate it
     if not columns:
         cursor.execute("DROP TABLE IF EXISTS organisation_groups")
         cursor.execute("""
@@ -232,7 +231,6 @@ def init_evaluation():
     connection.close()
 
 def init_campaign_groups():
-    """Initialize table linking campaigns with organization groups"""
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -269,7 +267,6 @@ def init_campaign_groups():
         connection.close()
 
 def init_campaign_role_form_defaults():
-    """Initialize table mapping campaign role-pair defaults to forms."""
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -308,7 +305,6 @@ def init_campaign_role_form_defaults():
         connection.close()
 
 def init_system_permissions():
-    """Initialize system permissions table"""
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -344,7 +340,6 @@ def init_system_permissions():
         connection.close()
 
 def init_system_roles():
-    """Initialize system roles table"""
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -380,7 +375,6 @@ def init_system_roles():
         connection.close()
 
 def init_system_users():
-    """Initialize system users table for login"""
     connection = get_connection()
     cursor = connection.cursor()
 

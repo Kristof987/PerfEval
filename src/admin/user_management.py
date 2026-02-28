@@ -13,12 +13,10 @@ from database.system_users import (
 st.header("User Management")
 st.write(f"You are logged in as {st.session_state.role}.")
 
-# Check if user has permission to manage system users
 if st.session_state.role not in ["Admin", "HR employee"]:
     st.error("You don't have permission to access this page.")
     st.stop()
 
-# Create tabs for different management sections
 tab1, tab2, tab3, tab4 = st.tabs(["System Users", "System Roles", "System Permissions", "Add New"])
 
 with tab1:
@@ -91,7 +89,6 @@ with tab3:
 with tab4:
     st.subheader("Add New Items")
     
-    # Add new system user
     with st.expander("➕ Add New System User", expanded=True):
         with st.form("add_user_form"):
             st.write("Create a new system user who can log into the system.")
@@ -100,7 +97,6 @@ with tab4:
             username = st.text_input("Username*", help="Login username (will be same as name by default)")
             email = st.text_input("Email*")
             
-            # Get employees for selection
             employees = get_all_employees()
             
             employee_id = None
@@ -134,7 +130,6 @@ with tab4:
                 elif role_id is None:
                     st.error("Please select a valid system role")
                 else:
-                    # If username is empty, use name as username
                     final_username = username if username else name
                     
                     success, message = add_system_user(
@@ -152,7 +147,6 @@ with tab4:
                     else:
                         st.error(message)
     
-    # Add new permission (Admin only)
     if st.session_state.role == "Admin":
         with st.expander("➕ Add New System Permission"):
             with st.form("add_permission_form"):
@@ -179,7 +173,6 @@ with tab4:
                         else:
                             st.error(message)
         
-        # Add new role (Admin only)
         with st.expander("➕ Add New System Role"):
             with st.form("add_role_form"):
                 st.write("Create a new system role.")

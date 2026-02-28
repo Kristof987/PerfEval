@@ -45,14 +45,10 @@ class OrgGroupsRepository:
 
     def delete_group(self, conn, group_id: int) -> None:
         with conn.cursor() as cur:
-            # ha van FK cascade, elég a group törlés; ha nincs, előbb employee_groups-ból törölni
             cur.execute("DELETE FROM employee_groups WHERE group_id = %s", (group_id,))
             cur.execute("DELETE FROM organisation_groups WHERE id = %s", (group_id,))
 
     def list_group_members(self, conn, group_id: int) -> List[Tuple[int, str, str]]:
-        """
-        Returns: [(emp_id, name, email), ...]
-        """
         with conn.cursor() as cur:
             cur.execute(
                 """

@@ -22,9 +22,6 @@ class OrgEmployeesRepository:
             return [OrgEmployee(id=r[0], name=r[1], email=r[2], role=r[3]) for r in cur.fetchall()]
 
     def list_employee_groups(self, conn, employee_id: int) -> List[Tuple[int, str]]:
-        """
-        Returns [(group_id, group_name)]
-        """
         with conn.cursor() as cur:
             cur.execute(
                 """

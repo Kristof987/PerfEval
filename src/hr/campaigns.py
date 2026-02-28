@@ -1,16 +1,9 @@
-"""Campaign management functions for HR employees"""
 from database.connection import get_connection
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 
 def get_all_campaigns() -> List[Dict]:
-    """
-    Retrieve all campaigns from the database with evaluation completion statistics.
-    
-    Returns:
-        List of campaign dictionaries with completion data
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -61,15 +54,6 @@ def get_all_campaigns() -> List[Dict]:
 
 
 def get_campaign_by_id(campaign_id: int) -> Optional[Dict]:
-    """
-    Retrieve a specific campaign by ID.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        
-    Returns:
-        Campaign dictionary or None if not found
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -119,19 +103,6 @@ def get_campaign_by_id(campaign_id: int) -> Optional[Dict]:
 
 def create_campaign(name: str, description: str, start_date: datetime, 
                    end_date: Optional[datetime] = None, comment: Optional[str] = None) -> Optional[int]:
-    """
-    Create a new campaign.
-    
-    Args:
-        name: Campaign name (must be unique)
-        description: Campaign description
-        start_date: Campaign start date
-        end_date: Campaign end date (optional)
-        comment: Additional comments (optional)
-        
-    Returns:
-        The ID of the created campaign or None on error
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -159,26 +130,10 @@ def update_campaign(campaign_id: int, name: Optional[str] = None,
                    description: Optional[str] = None, start_date: Optional[datetime] = None,
                    end_date: Optional[datetime] = None, is_active: Optional[bool] = None,
                    comment: Optional[str] = None) -> bool:
-    """
-    Update an existing campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign to update
-        name: New name (optional)
-        description: New description (optional)
-        start_date: New start date (optional)
-        end_date: New end date (optional)
-        is_active: New active status (optional)
-        comment: New comment (optional)
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
     try:
-        # Build dynamic update query
         update_fields = []
         params = []
         
@@ -202,7 +157,7 @@ def update_campaign(campaign_id: int, name: Optional[str] = None,
             params.append(comment)
         
         if not update_fields:
-            return True  # Nothing to update
+            return True
         
         params.append(campaign_id)
         query = f"UPDATE campaign SET {', '.join(update_fields)} WHERE id = %s"
@@ -221,23 +176,12 @@ def update_campaign(campaign_id: int, name: Optional[str] = None,
 
 
 def delete_campaign(campaign_id: int) -> bool:
-    """
-    Delete a campaign by ID.
-    
-    Args:
-        campaign_id: The ID of the campaign to delete
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
     try:
-        # First delete all evaluations associated with this campaign
         cursor.execute("DELETE FROM evaluation WHERE campaign_id = %s", (campaign_id,))
-        
-        # Then delete the campaign
+
         cursor.execute("DELETE FROM campaign WHERE id = %s", (campaign_id,))
         
         connection.commit()
@@ -253,15 +197,6 @@ def delete_campaign(campaign_id: int) -> bool:
 
 
 def toggle_campaign_status(campaign_id: int) -> bool:
-    """
-    Toggle the active status of a campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -285,15 +220,6 @@ def toggle_campaign_status(campaign_id: int) -> bool:
 
 
 def get_campaign_evaluations(campaign_id: int) -> List[Dict]:
-    """
-    Get all evaluations for a specific campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        
-    Returns:
-        List of evaluation dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -340,12 +266,6 @@ def get_campaign_evaluations(campaign_id: int) -> List[Dict]:
 
 
 def get_all_forms() -> List[Dict]:
-    """
-    Get all available evaluation forms.
-    
-    Returns:
-        List of form dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -378,12 +298,6 @@ def get_all_forms() -> List[Dict]:
 
 
 def get_organisation_roles() -> List[Dict]:
-    """
-    Get all organisation roles.
-
-    Returns:
-        List of role dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -412,15 +326,6 @@ def get_organisation_roles() -> List[Dict]:
 
 
 def get_employee_roles_map(employee_ids: List[int]) -> Dict[int, Optional[str]]:
-    """
-    Get role names for the given employee IDs.
-
-    Args:
-        employee_ids: List of employee IDs
-
-    Returns:
-        Mapping of employee_id -> role name
-    """
     if not employee_ids:
         return {}
 
@@ -447,12 +352,6 @@ def get_employee_roles_map(employee_ids: List[int]) -> Dict[int, Optional[str]]:
 
 
 def get_campaign_role_form_defaults(campaign_id: int) -> Dict[Tuple[str, str], int]:
-    """
-    Fetch role-pair default form mapping for a campaign.
-
-    Returns:
-        Mapping of (evaluator_role, evaluatee_role) -> form_id
-    """
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -478,13 +377,6 @@ def upsert_campaign_role_form_defaults(
     campaign_id: int,
     role_form_map: Dict[Tuple[str, str], int]
 ) -> bool:
-    """
-    Upsert role-pair default forms for a campaign.
-
-    Args:
-        campaign_id: Campaign ID
-        role_form_map: Mapping of (evaluator_role, evaluatee_role) -> form_id
-    """
     print(f"[role_form_defaults] upsert campaign_id={campaign_id} items={len(role_form_map)}")
     if not role_form_map:
         return True
@@ -514,12 +406,6 @@ def upsert_campaign_role_form_defaults(
 
 
 def get_all_groups() -> List[Dict]:
-    """
-    Get all organization groups.
-    
-    Returns:
-        List of group dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -552,15 +438,6 @@ def get_all_groups() -> List[Dict]:
 
 
 def get_campaign_groups(campaign_id: int) -> List[Dict]:
-    """
-    Get all groups assigned to a campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        
-    Returns:
-        List of group dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -595,16 +472,6 @@ def get_campaign_groups(campaign_id: int) -> List[Dict]:
 
 
 def assign_group_to_campaign(campaign_id: int, group_id: int) -> bool:
-    """
-    Assign a group to a campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        group_id: The ID of the group
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -628,16 +495,6 @@ def assign_group_to_campaign(campaign_id: int, group_id: int) -> bool:
 
 
 def remove_group_from_campaign(campaign_id: int, group_id: int) -> bool:
-    """
-    Remove a group from a campaign.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        group_id: The ID of the group
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -660,15 +517,6 @@ def remove_group_from_campaign(campaign_id: int, group_id: int) -> bool:
 
 
 def get_group_members(group_id: int) -> List[Dict]:
-    """
-    Get all employees in a specific group.
-    
-    Args:
-        group_id: The ID of the group
-        
-    Returns:
-        List of employee dictionaries
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -703,22 +551,10 @@ def get_group_members(group_id: int) -> List[Dict]:
 
 
 def get_campaign_group_evaluations(campaign_id: int, group_id: int) -> Dict:
-    """
-    Get evaluation matrix for a campaign and group.
-    Returns which evaluators evaluate which evaluatees.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        group_id: The ID of the group
-        
-    Returns:
-        Dictionary with evaluation matrix data
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
     try:
-        # Get all evaluations for this campaign where both evaluator and evaluatee are in the group
         cursor.execute("""
             SELECT
                 e.evaluator_id,
@@ -755,18 +591,6 @@ def get_campaign_group_evaluations(campaign_id: int, group_id: int) -> Dict:
 
 
 def create_evaluation(campaign_id: int, evaluator_id: int, evaluatee_id: int, form_id: int = 1) -> Optional[int]:
-    """
-    Create a new evaluation assignment.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        evaluator_id: The ID of the evaluator
-        evaluatee_id: The ID of the evaluatee
-        form_id: The ID of the form (default: 1)
-        
-    Returns:
-        The ID of the created evaluation or None on error
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -791,15 +615,6 @@ def create_evaluation(campaign_id: int, evaluator_id: int, evaluatee_id: int, fo
 
 
 def delete_evaluation(evaluation_id: int) -> bool:
-    """
-    Delete an evaluation assignment.
-    
-    Args:
-        evaluation_id: The ID of the evaluation
-        
-    Returns:
-        True if successful, False otherwise
-    """
     connection = get_connection()
     cursor = connection.cursor()
     
@@ -827,19 +642,6 @@ def save_evaluations_batch(
     assignments: List[Tuple[int, int]],
     role_form_map: Dict[Tuple[str, str], int]
 ) -> Tuple[bool, Optional[str]]:
-    """
-    Save multiple evaluation assignments with the specified form.
-    Clears existing evaluations for this campaign and group, then saves new ones.
-    
-    Args:
-        campaign_id: The ID of the campaign
-        group_id: The ID of the group
-        assignments: List of (evaluator_id, evaluatee_id) tuples
-        role_form_map: Mapping of (evaluator_role, evaluatee_role) -> form_id
-        
-    Returns:
-        True if successful, False otherwise
-    """
     print(
         "[save_evaluations_batch] start "
         f"campaign_id={campaign_id} group_id={group_id} assignments={len(assignments)}"
@@ -848,7 +650,6 @@ def save_evaluations_batch(
     cursor = connection.cursor()
     
     try:
-        # First, delete all existing evaluations for this campaign and group
         print("[save_evaluations_batch] deleting existing evaluations")
         cursor.execute("""
             DELETE FROM evaluation
@@ -860,19 +661,16 @@ def save_evaluations_batch(
                 SELECT employee_id FROM employee_groups WHERE group_id = %s
             )
         """, (campaign_id, group_id, group_id))
-        
-        # Resolve roles for all employees
+
         employee_ids = list({evaluator_id for evaluator_id, _ in assignments} | {evaluatee_id for _, evaluatee_id in assignments})
         print(f"[save_evaluations_batch] resolving roles for employee_ids={employee_ids}")
         employee_roles = get_employee_roles_map(employee_ids)
         print(f"[save_evaluations_batch] roles resolved count={len(employee_roles)}")
 
-        # Ensure role_form_map is populated from DB if empty
         if not role_form_map:
             role_form_map = get_campaign_role_form_defaults(campaign_id)
         print(f"[save_evaluations_batch] role_form_map size={len(role_form_map)}")
 
-        # Now insert all new assignments with role-based form selection
         for evaluator_id, evaluatee_id in assignments:
             evaluator_role = employee_roles.get(evaluator_id)
             evaluatee_role = employee_roles.get(evaluatee_id)

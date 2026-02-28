@@ -4,9 +4,7 @@ from consts.consts import ROLES
 
 st.title("Settings")
 
-# Check if user is Admin
 if st.session_state.role == "Admin":
-    # Create tabs for Admin users
     tab1, = st.tabs(["Personal Information"])
     
     with tab1:
@@ -17,7 +15,6 @@ if st.session_state.role == "Admin":
 
 
 else:
-    # For non-Admin users, show only personal information
     name = st.text_input("Name", value=st.session_state.name)
     role = st.selectbox("Choose your role", ROLES, index=ROLES.index(st.session_state.role))
     email = st.text_input("Email", value=st.session_state.email)

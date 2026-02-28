@@ -6,7 +6,6 @@ from consts.consts import ROLES
 if "role" not in st.session_state:
     st.session_state.role = None
 
-# Initialize database on app start
 try:
     init_databases()
 except Exception as e:
@@ -18,7 +17,6 @@ def login():
 
     st.header("Log in")
     
-    # Import validation function
     from database.system_users import validate_system_user
     
     st.info("Please log in with your system username or name")
@@ -26,14 +24,11 @@ def login():
 
     if st.button("Log in"):
         if username_input:
-            # Validate user exists in system_users table
             is_valid, user_data = validate_system_user(username_input)
             
             if is_valid:
-                # Use the role from system_users
                 role = user_data['role_name'] if user_data['role_name'] else "Employee"
                 
-                # Set session state (last_login is already updated in validate_system_user)
                 st.session_state.role = role
                 st.session_state.name = user_data['name']
                 st.session_state.username = user_data['username']

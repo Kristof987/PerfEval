@@ -1,13 +1,10 @@
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from database.connection import get_connection
 
 
 def get_user_evaluations(employee_id: int) -> List[Dict]:
-    """
-    Fetch evaluations assigned to a given evaluator (employee).
-    """
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -59,9 +56,6 @@ def get_user_evaluations(employee_id: int) -> List[Dict]:
 
 
 def save_evaluation_answers(evaluation_id: int, answers: Dict) -> bool:
-    """
-    Save answers for an evaluation and mark as completed.
-    """
     connection = get_connection()
     cursor = connection.cursor()
 

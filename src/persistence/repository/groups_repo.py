@@ -14,7 +14,7 @@ class GroupRow:
     id: int
     name: str
     description: str | None
-    joined_at: str | None  # you can keep datetime too
+    joined_at: str | None
     member_count: int
 
 
@@ -89,10 +89,6 @@ class GroupsRepository:
             ]
 
     def get_group_members_for_groups(self, conn, group_ids: List[int], limit_per_group: int | None = None) -> Dict[int, List[Tuple[str, str]]]:
-        """
-        Returns {group_id: [(name, email), ...]}
-        If limit_per_group is set, returns up to that many members per group (Postgres window function).
-        """
         if not group_ids:
             return {}
 
@@ -109,7 +105,6 @@ class GroupsRepository:
                     (group_ids,),
                 )
             else:
-                # per-group limit using row_number window function
                 cur.execute(
                     """
                     SELECT group_id, name, email

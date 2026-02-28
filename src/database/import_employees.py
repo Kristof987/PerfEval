@@ -160,7 +160,6 @@ def add_employee_to_employee_group(employee_id, group_id):
 def delete_employee_group(group_id):
     conn = get_connection()
     cursor = conn.cursor()
-    # The foreign key constraint will cascade delete employee_groups entries
     cursor.execute("DELETE FROM organisation_groups WHERE id = %s", (group_id,))
     conn.commit()
     cursor.close()

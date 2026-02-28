@@ -1,4 +1,3 @@
-# app/services/org_admin_service.py
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,7 +32,6 @@ class OrgAdminService:
         self.employees_repo = employees_repo
         self.roles_repo = roles_repo
 
-    # ---------- Groups ----------
     def list_groups(self) -> GroupsView:
         with self.db.connection() as conn:
             return GroupsView(groups=self.groups_repo.list_groups(conn))
@@ -66,7 +64,6 @@ class OrgAdminService:
         with self.db.transaction() as conn:
             self.groups_repo.remove_member(conn, group_id, employee_id)
 
-    # ---------- Employees ----------
     def list_employees(self) -> EmployeesView:
         with self.db.connection() as conn:
             return EmployeesView(employees=self.employees_repo.list_employees(conn))
@@ -83,17 +80,12 @@ class OrgAdminService:
         with self.db.transaction() as conn:
             self.employees_repo.remove_employee_from_group(conn, employee_id, group_id)
 
-    # ---------- Roles ----------
     def list_system_roles(self) -> List[SystemRole]:
         with self.db.connection() as conn:
             return self.roles_repo.list_roles(conn)
 
-    # ---------- Import ----------
     def import_employees(self, uploaded_file) -> tuple[int, int]:
-        # ha az import több táblát érint, érdemes transactionbe tenni
-        # itt a simple forma: az importer intézi, vagy refaktoráld úgy, hogy conn-t kapjon
         return import_employees_from_template(uploaded_file)
 
-    # Template path (UI számára)
     def get_employee_template_path(self) -> Path:
         return Path("datafiles") / "Employee_Template.xlsx"

@@ -36,7 +36,6 @@ class CreateNewCampaignPage:
                 if not name or not description:
                     st.error(f"{ICONS['error']} Please fill in all required fields (marked with *)")
                 else:
-                    # Convert dates to datetime
                     start_datetime = datetime.combine(start_date, datetime.min.time())
                     end_datetime = datetime.combine(end_date, datetime.min.time()) if end_date else None
 

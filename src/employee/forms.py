@@ -24,7 +24,7 @@ for evaluation in evaluations:
     campaigns.setdefault(evaluation["campaign_name"], []).append(evaluation)
 
 for campaign_name, items in campaigns.items():
-    with st.expander(campaign_name, expanded=False):
+    with st.expander(campaign_name, expanded=True):
         for evaluation in items:
             col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
             with col1:
@@ -35,14 +35,14 @@ for campaign_name, items in campaigns.items():
             with col3:
                 st.write(evaluation["status"].capitalize())
             with col4:
-                st.button(
+                button_key = f"fill_{evaluation['evaluation_id']}"
+                if st.button(
                     "Fill in",
-                    key=f"fill_{evaluation['evaluation_id']}",
+                    key=button_key,
                     disabled=evaluation["status"] == "completed",
-                    on_click=lambda eval_id=evaluation["evaluation_id"]: st.session_state.update(
-                        {"current_evaluation_id": eval_id}
-                    ),
-                )
+                ):
+                    st.session_state.current_evaluation_id = evaluation["evaluation_id"]
+                    st.rerun()
 
 selected_evaluation = None
 if st.session_state.current_evaluation_id:

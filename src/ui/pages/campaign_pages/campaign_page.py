@@ -26,17 +26,12 @@ from consts.consts import ICONS
 from ui.pages.campaign_pages.create_new_campaign_page import CreateNewCampaignPage
 from ui.state.session_state import State
 
-# Get query parameters
 query_params = st.query_params
 
 State.init()
 
 
 def build_default_role_form_map(roles, forms):
-    """
-    Build default role->role form mapping.
-    Self-assessment uses "{role} self-assessment" if available.
-    """
     if not roles or not forms:
         return {}
 
@@ -75,11 +70,9 @@ def ensure_role_form_map(campaign_id, roles, forms):
 st.title(f"{ICONS['dashboard']} Campaign Management")
 st.write("Create and manage performance evaluation campaigns")
 
-# Create New Campaign Dialog
 if query_params.get("create") == "true":
     CreateNewCampaignPage(query_params).create()
 
-# Edit Campaign Dialog
 elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
     campaign = get_campaign_by_id(st.session_state.edit_campaign_id)
     
@@ -111,7 +104,6 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
                 if not name or not description:
                     st.error(f"{ICONS['error']} Please fill in all required fields (marked with *)")
                 else:
-                    # Convert dates to datetime
                     start_datetime = datetime.combine(start_date, datetime.min.time())
                     end_datetime = datetime.combine(end_date, datetime.min.time()) if end_date else None
                     
@@ -138,7 +130,6 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
                 st.session_state.edit_campaign_id = None
                 st.rerun()
 
-# View Campaign Details Dialog
 elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
     campaign = get_campaign_by_id(st.session_state.view_campaign_id)
     
@@ -161,8 +152,7 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
         st.write(f"**Description:** {campaign['description']}")
         if campaign['comment']:
             st.write(f"**Comments:** {campaign['comment']}")
-        
-        # Show evaluations
+
         st.write("---")
         st.write("**Evaluations:**")
         evaluations = get_campaign_evaluations(st.session_state.view_campaign_id)
@@ -179,14 +169,12 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
             st.session_state.view_campaign_id = None
             st.rerun()
 
-# Team Assignment Dialog
 elif st.session_state.show_team_assignment and st.session_state.team_campaign_id:
     campaign = get_campaign_by_id(st.session_state.team_campaign_id)
     
     if campaign:
         st.subheader(f"{ICONS['teams']} Team Assignment: {campaign['name']}")
-        
-        # Get all groups and assigned groups
+
         all_groups = get_all_groups()
         assigned_groups = get_campaign_groups(st.session_state.team_campaign_id)
         assigned_group_ids = [g['id'] for g in assigned_groups]
@@ -232,7 +220,6 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
             st.session_state.team_campaign_id = None
             st.rerun()
 
-# Role Form Mapping Dialog
 elif st.session_state.show_role_form_mapping and st.session_state.role_form_campaign_id:
     campaign = get_campaign_by_id(st.session_state.role_form_campaign_id)
 
@@ -285,16 +272,13 @@ elif st.session_state.show_role_form_mapping and st.session_state.role_form_camp
                 st.session_state.role_form_campaign_id = None
                 st.rerun()
 
-# Evaluation Matrix Dialog
 elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaign_id and st.session_state.matrix_group_id:
     campaign = get_campaign_by_id(st.session_state.matrix_campaign_id)
     members = get_group_members(st.session_state.matrix_group_id)
     evaluation_matrix = get_campaign_group_evaluations(st.session_state.matrix_campaign_id, st.session_state.matrix_group_id)
-    
-    # Initialize matrix selections in session state if not exists
+
     matrix_key = f"matrix_selections_{st.session_state.matrix_campaign_id}_{st.session_state.matrix_group_id}"
     if matrix_key not in st.session_state:
-        # Initialize with current selections from database
         st.session_state[matrix_key] = set()
         for evaluator_id in evaluation_matrix:
             for evaluatee_id in evaluation_matrix[evaluator_id]:
@@ -307,8 +291,7 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
         st.subheader(f"{ICONS['matrix']} Evaluation Matrix: {campaign['name']} - {group_name}")
         st.write("**Who evaluates whom**")
         st.caption("Rows = Evaluatee (who receives feedback), Columns = Evaluator (who gives feedback)")
-        
-        # Role-based form selection info
+
         st.write("---")
         forms = get_all_forms()
         roles = get_organisation_roles()
@@ -321,12 +304,10 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             map_key = ensure_role_form_map(st.session_state.matrix_campaign_id, [r["name"] for r in roles], forms)
             st.info("Forms are selected by evaluator role → evaluatee role defaults. Configure them from the campaign list.")
             st.write("---")
-            
-            # Display matrix with checkboxes using data_editor for scrolling
+
             st.write("**Manual Selection (Evaluatee ↓ / Evaluator →):**")
             st.caption("Check the box where row person is evaluated by column person")
-            
-            # Create DataFrame for the matrix
+
             matrix_data = {}
             for evaluator in members:
                 evaluator_name = evaluator['name']
@@ -337,11 +318,9 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                     evaluatee_id = evaluatee['id']
                     is_selected = (evaluator_id, evaluatee_id) in st.session_state[matrix_key]
                     matrix_data[evaluator_name].append(is_selected)
-            
-            # Create DataFrame with evaluatee names as index
+
             df = pd.DataFrame(matrix_data, index=[m['name'] for m in members])
-            
-            # Display editable dataframe with scrolling
+
             edited_df = st.data_editor(
                 df,
                 use_container_width=True,
@@ -349,8 +328,7 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                 hide_index=False,
                 key=f"matrix_editor_{matrix_key}"
             )
-            
-            # Update session state based on edited dataframe
+
             st.session_state[matrix_key] = set()
             for evaluatee_idx, evaluatee in enumerate(members):
                 for evaluator_idx, evaluator in enumerate(members):
@@ -359,11 +337,9 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                         st.session_state[matrix_key].add((evaluator['id'], evaluatee['id']))
             
             st.write("---")
-            
-            # Auto-assignment controls
+
             st.write("**Quick Selection:**")
-            
-            # Store percentage in session state if it doesn't exist
+
             percentage_key = f"percentage_{st.session_state.matrix_campaign_id}_{st.session_state.matrix_group_id}"
             if percentage_key not in st.session_state:
                 st.session_state[percentage_key] = 1
@@ -371,7 +347,6 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
             with col1:
                 if st.button(f"{ICONS['select_all']} Select All", use_container_width=True):
-                    # Select everyone evaluates everyone
                     st.session_state[matrix_key] = set()
                     for evaluator in members:
                         for evaluatee in members:
@@ -380,12 +355,10 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             
             with col2:
                 if st.button(f"{ICONS['delete']} Clear All", use_container_width=True):
-                    # Clear all selections in session state
                     st.session_state[matrix_key] = set()
                     st.rerun()
             
             with col3:
-                # Percentage input as number_input button-style
                 #TODO: rename percentage_key since it is no longer a percentage
                 percentage = st.number_input(
                     "Number of evaluations per Employee",
@@ -402,14 +375,13 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                     st.session_state[matrix_key] = set()
 
                     ids = [m["id"] for m in members]
-                    k = int(percentage)  # minden evaluatee ennyit kap
+                    k = int(percentage)
 
-                    out = {i: 0 for i in ids}  # ki mennyit ad eddig
-                    pool = [evaluatee for evaluatee in ids for _ in range(k)]  # mindenkinek k bejövő
+                    out = {i: 0 for i in ids}
+                    pool = [evaluatee for evaluatee in ids for _ in range(k)]
                     random.shuffle(pool)
 
                     for evaluatee in pool:
-                        # válassz evaluatort, aki nem önmaga és eddig a legkevesebbet adott
                         candidates = [evaluator for evaluator in ids if
                                       evaluator != evaluatee and (evaluator, evaluatee) not in st.session_state[
                                           matrix_key]]
@@ -431,23 +403,18 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                     st.rerun()
             st.write("---")
 
-
-            # Save and Back buttons
             col_save, col_back = st.columns(2)
             with col_save:
                 if st.button(f"{ICONS['save']} Save Evaluations", type="primary", use_container_width=True):
-                    # Convert session state selections to list of tuples
                     assignments = list(st.session_state[matrix_key])
 
                     role_form_map = st.session_state.get(map_key, {}) if roles and forms else {}
 
-                    # Pre-validate: check all employees in assignments have roles
                     all_employee_ids = list({eid for pair in assignments for eid in pair})
                     employee_roles_check = get_employee_roles_map(all_employee_ids)
                     missing_role_ids = [eid for eid in all_employee_ids if not employee_roles_check.get(eid)]
 
                     if missing_role_ids:
-                        # Find names for missing employees
                         missing_names = [
                             m['name'] for m in members if m['id'] in missing_role_ids
                         ]
@@ -471,7 +438,6 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
 
                         if success:
                             st.success(f"{ICONS['check']} Saved {len(assignments)} evaluation assignments with role-based forms!")
-                            # Clear session state for this matrix
                             del st.session_state[matrix_key]
                             st.rerun()
                         else:
@@ -480,7 +446,6 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
             
             with col_back:
                 if st.button("Back to Teams", use_container_width=True):
-                    # Clear session state for this matrix
                     if matrix_key in st.session_state:
                         del st.session_state[matrix_key]
                     st.session_state.show_evaluation_matrix = False
@@ -488,7 +453,6 @@ elif st.session_state.show_evaluation_matrix and st.session_state.matrix_campaig
                     st.session_state.matrix_group_id = None
                     st.rerun()
 
-# Delete Confirmation Dialog
 elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_id:
     campaign = get_campaign_by_id(st.session_state.delete_campaign_id)
     
@@ -513,9 +477,7 @@ elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_i
                 st.session_state.delete_campaign_id = None
                 st.rerun()
 
-# Main campaign list view
 else:
-    # Create New Campaign Button
     st.write("")
     if st.button(f"{ICONS['add']} Create New Campaign", type="primary", use_container_width=True):
         query_params["create"] = "true"
@@ -525,18 +487,14 @@ else:
     st.write("---")
     st.subheader("Campaign List")
     
-    # Fetch campaigns from database
     campaigns = get_all_campaigns()
     
     if not campaigns:
         st.info(f"{ICONS['list']} No campaigns found. Create your first campaign to get started!")
     else:
-        # Display campaigns
         for campaign in campaigns:
-            # Calculate completion percentage
             completion_pct = (campaign['completed'] / campaign['total'] * 100) if campaign['total'] > 0 else 0
             
-            # Status badge icon
             status_icon = ICONS['active'] if campaign['is_active'] else ICONS['inactive']
             status_text = "ACTIVE" if campaign['is_active'] else "INACTIVE"
             
@@ -557,10 +515,8 @@ else:
                     st.write("")
                     st.write(f"**{campaign['completed']}/{campaign['total']}**")
                 
-                # Progress bar
                 st.progress(completion_pct / 100, text=f"Completion: {completion_pct:.0f}%")
                 
-                # Action buttons
                 col_view, col_edit, col_teams, col_role_forms, col_toggle, col_delete = st.columns([1, 1, 1, 1, 1, 1])
                 
                 with col_view:
