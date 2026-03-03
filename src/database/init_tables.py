@@ -416,6 +416,103 @@ def init_system_users():
         cursor.close()
         connection.close()
 
+def seed_system_permissions():
+    """Seed default system permissions if they don't exist."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        default_permissions = [
+            ("read", "Read-only access to view data"),
+            ("write", "Can create and modify data"),
+            ("admin", "Full administrative access"),
+        ]
+
+        for name, description in default_permissions:
+            cursor.execute("""
+                INSERT INTO system_permissions (name, description)
+                VALUES (%s, %s)
+                ON CONFLICT (name) DO NOTHING
+            """, (name, description))
+
+        connection.commit()
+    except Exception as e:
+        connection.rollback()
+        print("seed_system_permissions ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
+def seed_system_roles():
+    """Seed default system roles if they don't exist."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        # Get permission IDs
+        cursor.execute("SELECT id, name FROM system_permissions")
+        permissions = {row[1]: row[0] for row in cursor.fetchall()}
+
+        default_roles = [
+            ("Employee", permissions.get("read")),
+            ("Team Leader", permissions.get("write")),
+            ("HR employee", permissions.get("write")),
+            ("Management", permissions.get("read")),
+            ("Admin", permissions.get("admin")),
+        ]
+
+        for name, permission_id in default_roles:
+            cursor.execute("""
+                INSERT INTO system_roles (name, system_permission_id)
+                VALUES (%s, %s)
+                ON CONFLICT (name) DO NOTHING
+            """, (name, permission_id))
+
+        connection.commit()
+    except Exception as e:
+        connection.rollback()
+        print("seed_system_roles ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
+def seed_admin_user():
+    """Create a default admin user if no users exist."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        # Check if any system users exist
+        cursor.execute("SELECT COUNT(*) FROM system_users")
+        user_count = cursor.fetchone()[0]
+
+        if user_count == 0:
+            # Get the Admin role ID
+            cursor.execute("SELECT id FROM system_roles WHERE name = 'Admin'")
+            admin_role = cursor.fetchone()
+
+            if admin_role:
+                admin_role_id = admin_role[0]
+                # Create default admin user
+                cursor.execute("""
+                    INSERT INTO system_users (name, username, email, sys_szerep_id)
+                    VALUES (%s, %s, %s, %s)
+                """, ("System Administrator", "admin", "admin@perfeval.local", admin_role_id))
+                connection.commit()
+                print("Default admin user created: username='admin', email='admin@perfeval.local'")
+    except Exception as e:
+        connection.rollback()
+        print("seed_admin_user ERROR:", e)
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
 def init_databases():
     init_org_groups()
     init_org_roles()
@@ -429,3 +526,7 @@ def init_databases():
     init_system_permissions()
     init_system_roles()
     init_system_users()
+    # Seed default data
+    seed_system_permissions()
+    seed_system_roles()
+    seed_admin_user()
