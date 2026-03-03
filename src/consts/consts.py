@@ -1,0 +1,42 @@
+ROLES = [
+    None,
+    "Employee",
+    "Team Leader",
+    "HR employee",
+    "Management",
+    "Admin",
+]
+
+ICONS = {
+    "dashboard": ":material/monitoring:",
+    "add": ":material/add:",
+    "edit": ":material/edit:",
+    "delete": ":material/delete:",
+    "view": ":material/visibility:",
+    "teams": ":material/groups:",
+    "matrix": ":material/grid_on:",
+    "save": ":material/save:",
+    "close": ":material/close:",
+    "check": ":material/check_circle:",
+    "error": ":material/cancel:",
+    "warning": ":material/warning:",
+    "info": ":material/info:",
+    "active": ":material/check_circle:",
+    "inactive": ":material/cancel:",
+    "office": ":material/business:",
+    "pause": ":material/pause:",
+    "pending": ":material/schedule:",
+    "help": ":material/help:",
+    "play": ":material/play_arrow:",
+    "dice": ":material/casino:",
+    "list": ":material/list:",
+    "lightbulb": ":material/lightbulb:",
+    "select_all": ":material/select_all:"
+}
+
+TEMPLATE_COLUMNS = [
+    "Employee Name",
+    "Employee Email Address",
+    "Employee Organisation Role",
+    "Employee System Role",
+]
