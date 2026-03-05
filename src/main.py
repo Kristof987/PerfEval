@@ -74,13 +74,13 @@ admin_1 = st.Page(
 admin_2 = st.Page("admin/reports.py", title="Reports", icon=":material/security:")
 
 hr_campaigns = st.Page(
-    "ui/pages/campaign_pages/campaign_page.py",
+    "ui/pages/campaigns/campaign_page.py",
     title="Campaigns",
     icon=":material/campaign:"
 )
 
 hr_survey_builder = st.Page(
-    "hr/survey_builder.py",
+    "ui/pages/forms/form_builder_page.py",
     title="Form Builder",
     icon=":material/edit_note:"
 )
