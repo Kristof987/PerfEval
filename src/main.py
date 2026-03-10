@@ -19,8 +19,8 @@ def login():
     
     from database.system_users import validate_system_user
     
-    st.info("Please log in with your system username or name")
-    username_input = st.text_input("Username or Name")
+    st.info("Please use your credentials to sign in")
+    username_input = st.text_input("Username or E-mail", value="example@gmail.com")
 
     if st.button("Log in"):
         if username_input:
@@ -91,11 +91,30 @@ hr_org_page = st.Page(
     icon=":material/badge:"
 )
 
+hr_dashboard_page = st.Page(
+    "ui/pages/results/result_page.py",
+    title="Dashboard",
+    icon=":material/bar_chart:"
+)
+
+hr_dashboard_page2 = st.Page(
+    "ui/pages/results/result2_page.py",
+    title="Dashboard",
+    icon=":material/bar_chart:"
+)
+
+hr_campaign_results = st.Page(
+    "ui/pages/results/campaign_results_page.py",
+    title="Campaign Results",
+    icon=":material/assessment:"
+)
+
 account_pages = [logout_page, settings, manage_groups]
 welcome_pages = [employee_1, employee_2, employee_3]
 admin_pages = [admin_1, admin_2]
 hr_pages = [hr_campaigns, hr_survey_builder]
 org_pages = [hr_org_page]
+dashboard_pages = [hr_dashboard_page, hr_dashboard_page2, hr_campaign_results]
 
 st.title("TÉR Project")
 
@@ -105,9 +124,11 @@ if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "
 if st.session_state.role == "Admin":
     page_dict["Organisation"] = org_pages
     page_dict["Admin"] = admin_pages
+    page_dict["Dashboard"] = dashboard_pages
 if st.session_state.role == "HR employee":
     page_dict["Organisation"] = org_pages
     page_dict["HR"] = hr_pages
+    page_dict["Dashboard"] = dashboard_pages
 
 if len(page_dict) > 0:
     pg = st.navigation({"Account": account_pages} | page_dict)

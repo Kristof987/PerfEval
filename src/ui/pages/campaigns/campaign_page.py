@@ -237,18 +237,30 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
         st.write("**Evaluations:**")
         evaluations = svc.list_campaign_evaluations(st.session_state.view_campaign_id)
 
+        rows = []
+
         if evaluations:
             for ev in evaluations:
                 # ev could be dataclass or dict
                 status = _get(ev, "status")
                 evaluator_name = _get(ev, "evaluator_name")
                 evaluatee_name = _get(ev, "evaluatee_name")
+                # Use emoji directly for DataFrame display (ICONS use Streamlit markdown which doesn't render in DataFrame)
                 status_icon = {
-                    "todo": ICONS.get("pause", "⏸️"),
-                    "pending": ICONS.get("pending", "⏳"),
-                    "completed": ICONS.get("check", "✅"),
-                }.get(status, ICONS.get("help", "❔"))
-                st.write(f"{status_icon} {evaluator_name} → {evaluatee_name} ({status})")
+                    "todo": "\U0001F7E1 Todo",  # 🟡
+                    "pending": "\U0001F7E0 Pending",  # 🟠
+                    "completed": "\U0001F7E2 Completed"  # 🟢
+                }.get(status, "❔")
+
+                rows.append({
+                    "Evaluator": _get(ev, "evaluator_name"),
+                    "Evaluatee": _get(ev, "evaluatee_name"),
+                    "Status": status_icon
+                })
+
+            df = pd.DataFrame(rows)
+
+            st.dataframe(df, use_container_width=True)
         else:
             st.info("No evaluations found for this campaign.")
 
@@ -665,7 +677,7 @@ else:
 
                 with col_teams:
                     if st.button(
-                        f"{ICONS['teams']} Teams",
+                        f"{ICONS['teams']} Groups",
                         key=f"teams_{_get(campaign,'id')}",
                         use_container_width=True,
                     ):
@@ -679,7 +691,7 @@ else:
 
                 with col_role_forms:
                     if st.button(
-                        f"{ICONS['matrix']} Role Forms",
+                        f"{ICONS['matrix']} Assign forms",
                         key=f"role_forms_{_get(campaign,'id')}",
                         use_container_width=True,
                     ):
