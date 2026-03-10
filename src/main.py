@@ -20,7 +20,7 @@ def login():
     from database.system_users import validate_system_user
     
     st.info("Please use your credentials to sign in")
-    username_input = st.text_input("Username or E-mail", value="example@gmail.com")
+    username_input = st.text_input("Username or E-mail", placeholder="example@gmail.com")
 
     if st.button("Log in"):
         if username_input:

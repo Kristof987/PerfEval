@@ -30,6 +30,9 @@ services:
         condition: service_healthy
     ports:
       - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./datafiles:/app/datafiles
 
 volumes:
   pgdata:
