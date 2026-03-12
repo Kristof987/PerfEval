@@ -8,3 +8,5 @@ altair
 plotly
 streamlit_plotly_events
 streamlit_card
+matplotlib
+google-genai
