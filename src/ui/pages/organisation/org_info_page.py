@@ -7,7 +7,6 @@ from persistence.repository.org_groups_repo import OrgGroupsRepository
 from persistence.repository.org_employees_repo import OrgEmployeesRepository
 from persistence.repository.system_roles_repo import SystemRolesRepository
 
-
 st.subheader("Organisation Information")
 
 service = OrgAdminService(

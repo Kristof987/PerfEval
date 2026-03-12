@@ -37,7 +37,7 @@ for campaign_name, items in campaigns.items():
             with col4:
                 button_key = f"fill_{evaluation['evaluation_id']}"
                 if st.button(
-                    "Fill in",
+                    "Fill",
                     key=button_key,
                     disabled=evaluation["status"] == "completed",
                 ):

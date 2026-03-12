@@ -1,0 +1,43 @@
+- Beérkező review-k csoportosítása kampányok szerint:
+    -> Itt annyi külön csoport, ahányan típusú formot töltöttek ki vele kapcsolatban
+
+Minden egyes véleményről tároljuk:
+- Kérdés, válasz
+- Szekció neve (kompetencia)
+- Válasz típusa
+- Kitől érkezett (?)
+
+1. Információkinyerés
+
+LLM része - minden egyes kérdéshez tartozó válaszonként:
+- Melyik kompetenciáról szól
+- Kitől jött
+- Rövid összefoglalás
+- Pozitív/negatív/vegyes/semleges
+- Erősség
+- Fejlődési lehetőségek
+(- Konkrét példa van-e benne (ezzel alá lehet támasztani az adott erősséget/gyengeséget))
+
+Az egésznek a kimenete mondjuk egy json lenne.
+Bizonyos minimum számú véleményre szükség van
+
+Nem LLM része:
+Minden rating típusú feladatra külön-külön átlag kiszámítása - majd ezeket is átlagoljuk
+Ezek alapján szekciónként és összességében is kap egy ratinget a dolgozó
+Bizonyos minimum számú véleményre szükség van
+
+2. Külön kompetenciánként aggregálás
+- Kompetencia átlag mérőszámok, szórás/egyetértés mértéke
+- Fő pozitívumok
+- Fő fejlesztendő pontok
+- Adott véleményt válaszadók hány %-a említette
+
+3. Önértékelés - ugyanez a pipeline
+
+4. Összesítés: Rövid munkatársi összefoglaló, vezetői összefoglaló, stb. minden role csoporthoz 1
+Rövid önértékelés összefoglaló
+
+Fejlesztendő pontok, saját célok azonosítása
+Összevetés előző évi célokkal, mi sikerült mi nem
+
+Összesített pont, minden rating átlaga

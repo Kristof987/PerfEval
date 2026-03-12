@@ -3,3 +3,10 @@ psycopg2-binary
 streamlit
 pandas
 openpyxl
+plotly
+altair
+plotly
+streamlit_plotly_events
+streamlit_card
+matplotlib
+google-genai
