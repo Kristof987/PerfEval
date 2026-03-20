@@ -2,7 +2,7 @@ from datetime import datetime, UTC
 
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 
-from base import Base
+from models.base import Base
 
 class CampaignRoleFormDefault(Base):
     __tablename__ = "campaign_role_form_defaults"

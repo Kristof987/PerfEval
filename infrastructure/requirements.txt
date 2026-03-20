@@ -1,4 +1,4 @@
-streamlit>=1.30
+streamlit
 psycopg2-binary
 streamlit
 pandas
@@ -10,3 +10,4 @@ streamlit_plotly_events
 streamlit_card
 matplotlib
 google-genai
+sqlalchemy

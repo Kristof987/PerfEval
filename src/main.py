@@ -1,13 +1,12 @@
 import streamlit as st
 
-from database.init_tables import init_databases
-from consts.consts import ROLES
+from database.init_db import init_db
 
 if "role" not in st.session_state:
     st.session_state.role = None
 
 try:
-    init_databases()
+    init_db()
 except Exception as e:
     st.error(f"Database init_databases() failed: {e}")
     import traceback

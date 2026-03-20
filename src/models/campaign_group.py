@@ -2,7 +2,7 @@ from datetime import datetime, UTC
 
 from sqlalchemy import Column, Integer, ForeignKey, DateTime
 
-from base import Base
+from models.base import Base
 
 class CampaignGroup(Base):
     __tablename__ = "campaign_groups"

@@ -9,10 +9,10 @@ from persistence.db.connection import get_db
 from persistence.repository.form_repo2 import FormRepository, FormListRow, FormRow
 
 QUESTION_TYPES = {
-    "text": ("📝", "Text Response (open-ended)"),
-    "multiple_choice": ("☑️", "Multiple Choice"),
-    "rating": ("⭐", "Rating Scale"),
-    "slider_labels": ("🎚️", "Label Slider"),
+    "text": (":material/subject:", "Text Response (open-ended)"),
+    "multiple_choice": (":material/check_box:", "Multiple Choice"),
+    "rating": (":material/star:", "Rating Scale"),
+    "slider_labels": (":material/tune:", "Label Slider"),
 }
 
 
