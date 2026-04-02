@@ -22,6 +22,5 @@ class Employee(Base):
 
     org_role = relationship("OrganisationRole", back_populates="employees")
     org_role_name = association_proxy('org_role', 'name')
-    #TODO: OrganisationRole ORM class + backward populates
 
     #TODO: where else do we need employee relationship?

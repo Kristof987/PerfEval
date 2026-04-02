@@ -81,17 +81,17 @@ hr_org_page = st.Page(
     icon=":material/badge:"
 )
 
-hr_dashboard_page = st.Page(
-    "ui/pages/results/result_page.py",
-    title="Dashboard",
-    icon=":material/bar_chart:"
-)
+# hr_dashboard_page = st.Page(
+#     "ui/pages/results/result_page.py",
+#     title="Analytics",
+#     icon=":material/bar_chart:"
+# )
 
-hr_dashboard_page2 = st.Page(
-    "ui/pages/results/result2_page.py",
-    title="Dashboard",
-    icon=":material/bar_chart:"
-)
+# hr_dashboard_page2 = st.Page(
+#     "ui/pages/results/result2_page.py",
+#     title="Analytics",
+#     icon=":material/bar_chart:"
+# )
 
 hr_campaign_results = st.Page(
     "ui/pages/results/campaign_results_page.py",
@@ -104,7 +104,7 @@ welcome_pages = [employee_3]
 admin_pages = [admin_1]
 hr_pages = [hr_campaigns, hr_survey_builder]
 org_pages = [hr_org_page]
-dashboard_pages = [hr_dashboard_page, hr_dashboard_page2, hr_campaign_results]
+dashboard_pages = [hr_campaign_results]
 
 st.markdown("""
 <style>
@@ -117,7 +117,7 @@ section.stMain .block-container {
 }
 </style>""", unsafe_allow_html=True)
 
-st.title("TÉR Project")
+st.title("PerfEval Project")
 
 page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
@@ -125,11 +125,11 @@ if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "
 if st.session_state.role == "Admin":
     page_dict["Organisation"] = org_pages
     page_dict["Admin"] = admin_pages
-    page_dict["Dashboard"] = dashboard_pages
+    page_dict["Results"] = dashboard_pages
 if st.session_state.role == "HR employee":
     page_dict["Organisation"] = org_pages
     page_dict["HR"] = hr_pages
-    page_dict["Dashboard"] = dashboard_pages
+    page_dict["Results"] = dashboard_pages
 
 if len(page_dict) > 0:
     pg = st.navigation({"Account": account_pages} | page_dict)

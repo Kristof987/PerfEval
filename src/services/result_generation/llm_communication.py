@@ -7,7 +7,7 @@ class LLMCommunication:
 
     def request(self, prompt: str):
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0

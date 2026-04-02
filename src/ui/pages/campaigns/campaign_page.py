@@ -47,6 +47,27 @@ for k, v in _defaults.items():
 query_params = st.query_params
 svc = CampaignService()
 
+_CAMPAIGN_FLASH_KEY = "campaign_page_success_message"
+_campaign_flash = st.session_state.pop(_CAMPAIGN_FLASH_KEY, None)
+if _campaign_flash:
+    st.success(_campaign_flash)
+    st.markdown(
+        """
+        <script>
+        setTimeout(() => {
+          const alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+          alerts.forEach(a => { a.style.display = 'none'; });
+        }, 3500);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _campaign_flash_success_and_rerun(message: str) -> None:
+    st.session_state[_CAMPAIGN_FLASH_KEY] = message
+    st.rerun()
+
 # ----------------------------
 # Role -> Role default form mapping (UI-only logic, storage via service)
 # ----------------------------
@@ -134,9 +155,8 @@ if query_params.get("create") == "true":
                         end_date=end_datetime,
                         comment=comment if comment else None,
                     )
-                    st.success(f"{ICONS['check']} Campaign '{name}' created successfully!")
                     query_params.clear()
-                    st.rerun()
+                    _campaign_flash_success_and_rerun(f"{ICONS['check']} Campaign '{name}' created successfully!")
                 except Exception as e:
                     st.error(f"{ICONS['error']} Failed to create campaign. {e}")
 
@@ -193,10 +213,9 @@ elif st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
                             is_active=is_active,
                             comment=comment if comment else None,
                         )
-                        st.success(f"{ICONS['check']} Campaign '{name}' updated successfully!")
                         st.session_state.show_edit_dialog = False
                         st.session_state.edit_campaign_id = None
-                        st.rerun()
+                        _campaign_flash_success_and_rerun(f"{ICONS['check']} Campaign '{name}' updated successfully!")
                     except Exception as e:
                         st.error(f"{ICONS['error']} Failed to update campaign. {e}")
 
@@ -223,8 +242,9 @@ elif st.session_state.show_view_dialog and st.session_state.view_campaign_id:
             if _get(campaign, "end_date"):
                 st.write(f"**End Date:** {_get(campaign, 'end_date').strftime('%Y-%m-%d')}")
         with col2:
-            completed = int(_get(campaign, "completed", 0) or 0)
-            total = int(_get(campaign, "total", 0) or 0)
+            _counts = svc.get_campaign_counts(st.session_state.view_campaign_id)
+            completed = int(_counts.get("completed", 0) or 0)
+            total = int(_counts.get("total", 0) or 0)
             st.write(f"**Completed:** {completed} / {total}")
             completion_pct = (completed / total * 100) if total > 0 else 0
             st.progress(completion_pct / 100, text=f"Progress: {completion_pct:.0f}%")
@@ -282,7 +302,7 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
         assigned_groups = svc.list_campaign_groups(st.session_state.team_campaign_id)
         assigned_group_ids = [_get(g, "id") for g in assigned_groups]
 
-        st.write("**Assigned Teams:**")
+        st.write("**Assigned Groups:**")
         if assigned_groups:
             for group in assigned_groups:
                 col1, col2, col3 = st.columns([3, 1, 1])
@@ -290,7 +310,7 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
                     st.write(f"{ICONS.get('office','🏢')} **{_get(group,'name')}**")
                 with col2:
                     if st.button(
-                        f"{ICONS['matrix']} Matrix",
+                        f"{ICONS['matrix']} Assignment Matrix",
                         key=f"matrix_{_get(group,'id')}",
                         use_container_width=True,
                     ):
@@ -311,7 +331,7 @@ elif st.session_state.show_team_assignment and st.session_state.team_campaign_id
             st.info("No teams assigned yet.")
 
         st.write("---")
-        st.write("**Available Teams:**")
+        st.write("**Available Groups:**")
         unassigned_groups = [g for g in all_groups if _get(g, "id") not in assigned_group_ids]
 
         if unassigned_groups:
@@ -414,9 +434,8 @@ elif (
 
         st.subheader(f"{ICONS['matrix']} Evaluation Matrix: {_get(campaign, 'name')} - {group_name}")
         st.write("**Who evaluates whom**")
-        st.caption("Rows = Evaluatee (who receives feedback), Columns = Evaluator (who gives feedback)")
+        st.caption("Rows = person being evaluated (evaluatee) • Columns = person giving evaluation (evaluator)")
 
-        st.write("---")
         forms = svc.list_forms()
         roles = svc.list_org_roles()
 
@@ -433,8 +452,8 @@ elif (
             st.info("Forms are selected by evaluator role → evaluatee role defaults. Configure them from the campaign list.")
             st.write("---")
 
-            st.write("**Manual Selection (Evaluatee ↓ / Evaluator →):**")
-            st.caption("Check the box where row person is evaluated by column person")
+            st.write("**Manual Selection (Evaluator ↓ / Evaluatee →):**")
+            st.caption("Check a cell when the COLUMN person should evaluate the ROW person.")
 
             # Build boolean matrix dataframe
             matrix_data = {}
@@ -615,13 +634,15 @@ else:
     st.subheader("Campaign List")
 
     campaigns = svc.list_campaigns()
+    all_counts = svc.get_all_campaign_counts()
 
     if not campaigns:
         st.info(f"{ICONS.get('list','📋')} No campaigns found. Create your first campaign to get started!")
     else:
         for campaign in campaigns:
-            completed = int(_get(campaign, "completed", 0) or 0)
-            total = int(_get(campaign, "total", 0) or 0)
+            _counts = all_counts.get(_get(campaign, "id"), {"completed": 0, "total": 0})
+            completed = int(_counts.get("completed", 0) or 0)
+            total = int(_counts.get("total", 0) or 0)
             completion_pct = (completed / total * 100) if total > 0 else 0
 
             status_icon = ICONS["active"] if _get(campaign, "is_active") else ICONS["inactive"]

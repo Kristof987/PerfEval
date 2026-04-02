@@ -18,3 +18,10 @@ else:
     name = st.text_input("Name", value=st.session_state.name)
     role = st.selectbox("Choose your role", ROLES, index=ROLES.index(st.session_state.role))
     email = st.text_input("Email", value=st.session_state.email)
+
+
+if st.button("Save changes", type="primary"):
+    st.session_state.name = name
+    st.session_state.role = role
+    st.session_state.email = email
+    st.success("✅ Settings updated successfully.")

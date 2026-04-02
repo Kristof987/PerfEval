@@ -63,6 +63,21 @@ if selected_evaluation:
     with st.form("submit_form"):
         sections = questions.get("sections", [])
         for section in sections:
+            section_title = section.get("title", "General")
+            st.markdown(
+                f"""
+                <div style="
+                    margin: 0.8rem 0 0.4rem 0;
+                    padding: 0.35rem 0.6rem;
+                    border-left: 3px solid #cbd5e1;
+                    background: #f8fafc;
+                    color: #0f172a;
+                    font-weight: 700;
+                    border-radius: 6px;
+                ">{section_title}</div>
+                """,
+                unsafe_allow_html=True,
+            )
             for idx, question in enumerate(section.get("questions", [])):
                 q_id = question.get("id", idx)
                 q_text = question.get("text", "")
@@ -95,22 +110,18 @@ if selected_evaluation:
                 elif q_type == "slider_labels":
                     options = question.get("slider_options", [])
                     if options:
-                        answers[q_id] = st.select_slider(
+                        answers[q_id] = st.radio(
                             "Select value",
-                            options=options,
-                            value=options[0],
+                            options=[
+                                f"{i + 1}. {str(opt)}" for i, opt in enumerate(options)
+                            ],
                             key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
+                            horizontal=True,
                         )
-                elif q_type == "slider_labels":
-                    options = question.get("slider_options", [])
-                    if options:
-                        selected = st.select_slider(
-                            "Select value",
-                            options=options,
-                            value=options[0],
-                            key=f"answer_{selected_evaluation['evaluation_id']}_{q_id}",
-                        )
-                        answers[q_id] = selected
+                        # A mentett válaszból levágjuk a sorszámot, csak az eredeti opciót tároljuk
+                        if answers[q_id]:
+                            _parts = answers[q_id].split(". ", 1)
+                            answers[q_id] = _parts[1] if len(_parts) > 1 else answers[q_id]
 
                 st.write("")
 
