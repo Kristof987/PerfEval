@@ -22,6 +22,28 @@ def _date_to_dt(d):
     return datetime.combine(d, datetime.min.time()) if d else None
 
 
+def _list_campaign_role_names(campaign_id: int):
+    """Roles currently present among employees in groups assigned to this campaign."""
+    campaign_groups = svc.list_campaign_groups(campaign_id)
+    group_ids = [_get(g, "id") for g in campaign_groups if _get(g, "id") is not None]
+
+    employee_ids = set()
+    for group_id in group_ids:
+        members = svc.list_group_members(group_id)
+        for member in members:
+            employee_id = _get(member, "id")
+            if employee_id is not None:
+                employee_ids.add(int(employee_id))
+
+    if not employee_ids:
+        return []
+
+    with svc.db.connection() as conn:
+        roles_map = svc.employees.get_roles_map(conn, list(employee_ids))
+
+    return sorted({role for role in roles_map.values() if role})
+
+
 # ----------------------------
 # Session init (minimal, keep your existing State.init if you want)
 # ----------------------------
@@ -96,7 +118,13 @@ def ensure_role_form_map(campaign_id, role_names, forms):
 
     stored_map = svc.get_role_form_defaults(campaign_id)
     session_map = st.session_state.get(map_key, {})
-    merged_map = {**default_map, **stored_map, **session_map}
+
+    # Keep only pairs that are relevant for roles available in this campaign.
+    merged_map = dict(default_map)
+    for source in (stored_map, session_map):
+        for pair, form_id in source.items():
+            if pair in default_map and form_id:
+                merged_map[pair] = form_id
 
     for pair, form_id in default_map.items():
         if not merged_map.get(pair):
@@ -363,21 +391,39 @@ elif st.session_state.show_role_form_mapping and st.session_state.role_form_camp
 
     if campaign:
         st.subheader(f"{ICONS['matrix']} Role → Role Default Forms: {_get(campaign, 'name')}")
-        roles = svc.list_org_roles()
+        role_names = _list_campaign_role_names(st.session_state.role_form_campaign_id)
         forms = svc.list_forms()
 
         if not forms:
             st.error(f"{ICONS['error']} No forms available. Please create an evaluation form first.")
-        elif not roles:
-            st.error(f"{ICONS['error']} No organisation roles available. Please create roles first.")
+        elif not role_names:
+            st.error(
+                f"{ICONS['error']} No campaign roles available yet. "
+                "Assign groups to this campaign and make sure employees have organisation roles."
+            )
         else:
-            role_names = [r["name"] for r in roles]
             form_options = {f["name"]: f["id"] for f in forms}
             form_id_to_name = {f["id"]: f["name"] for f in forms}
 
             map_key = ensure_role_form_map(st.session_state.role_form_campaign_id, role_names, forms)
 
             st.caption("Self-assessment default is '{role} self-assessment' when available.")
+            st.write("---")
+
+            relationship_rows = []
+            for evaluator_role in role_names:
+                for evaluatee_role in role_names:
+                    form_id = st.session_state[map_key].get((evaluator_role, evaluatee_role))
+                    relationship_rows.append(
+                        {
+                            "Evaluator role": evaluator_role,
+                            "Evaluatee role": evaluatee_role,
+                            "Default form": form_id_to_name.get(form_id, "N/A"),
+                        }
+                    )
+
+            st.write("**Available role relationships in this campaign:**")
+            st.dataframe(pd.DataFrame(relationship_rows), use_container_width=True, hide_index=True)
             st.write("---")
 
             for evaluator_role in role_names:
@@ -437,16 +483,19 @@ elif (
         st.caption("Rows = person being evaluated (evaluatee) • Columns = person giving evaluation (evaluator)")
 
         forms = svc.list_forms()
-        roles = svc.list_org_roles()
+        role_names = _list_campaign_role_names(st.session_state.matrix_campaign_id)
 
         if not forms:
             st.error(f"{ICONS['error']} No forms available. Please create an evaluation form first.")
-        elif not roles:
-            st.error(f"{ICONS['error']} No organisation roles available. Please create roles first.")
+        elif not role_names:
+            st.error(
+                f"{ICONS['error']} No campaign roles available. "
+                "Assign groups and roles before creating evaluations."
+            )
         else:
             map_key = ensure_role_form_map(
                 st.session_state.matrix_campaign_id,
-                [r["name"] for r in roles],
+                role_names,
                 forms,
             )
             st.info("Forms are selected by evaluator role → evaluatee role defaults. Configure them from the campaign list.")
@@ -559,7 +608,7 @@ elif (
             with col_save:
                 if st.button(f"{ICONS['save']} Save Evaluations", type="primary", use_container_width=True):
                     assignments = list(st.session_state[matrix_key])
-                    role_form_map = st.session_state.get(map_key, {}) if roles and forms else {}
+                    role_form_map = st.session_state.get(map_key, {}) if role_names and forms else {}
 
                     # Check missing roles BEFORE save (same UX as your old code)
                     all_employee_ids = list({eid for pair in assignments for eid in pair})
@@ -702,10 +751,10 @@ else:
                         key=f"teams_{_get(campaign,'id')}",
                         use_container_width=True,
                     ):
-                        roles = svc.list_org_roles()
                         forms = svc.list_forms()
-                        if roles and forms:
-                            ensure_role_form_map(_get(campaign, "id"), [r["name"] for r in roles], forms)
+                        role_names = _list_campaign_role_names(_get(campaign, "id"))
+                        if role_names and forms:
+                            ensure_role_form_map(_get(campaign, "id"), role_names, forms)
                         st.session_state.show_team_assignment = True
                         st.session_state.team_campaign_id = _get(campaign, "id")
                         st.rerun()

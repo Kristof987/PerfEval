@@ -129,6 +129,26 @@ class CampaignService:
         with self.db.connection() as conn:
             return self.groups.list_group_members(conn, group_id)
 
+    def list_campaign_role_names(self, campaign_id: int) -> List[str]:
+        """Return distinct role names that are actually present in the campaign's assigned groups."""
+        with self.db.connection() as conn:
+            campaign_groups = self.groups.list_campaign_groups(conn, campaign_id)
+            group_ids = [int(g["id"]) for g in campaign_groups if g.get("id") is not None]
+
+            employee_ids: set[int] = set()
+            for group_id in group_ids:
+                for member in self.groups.list_group_members(conn, group_id):
+                    employee_id = member.get("id")
+                    if employee_id is not None:
+                        employee_ids.add(int(employee_id))
+
+            if not employee_ids:
+                return []
+
+            roles_map = self.employees.get_roles_map(conn, list(employee_ids))
+            role_names = sorted({role for role in roles_map.values() if role})
+            return role_names
+
     def list_campaign_evaluations(self, campaign_id: int):
         with self.db.connection() as conn:
             return self.evals.list_campaign_evaluations(conn, campaign_id)
