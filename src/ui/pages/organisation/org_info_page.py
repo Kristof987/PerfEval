@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 
 from database.import_employees import create_employee_and_add_to_system_users
 from database.system_users import get_system_roles
@@ -15,6 +16,36 @@ service = OrgAdminService(
     roles_repo=SystemRolesRepository(),
 )
 
+_FLASH_SUCCESS_KEY = "org_info_success_message"
+_flash_payload = st.session_state.get(_FLASH_SUCCESS_KEY)
+if isinstance(_flash_payload, dict):
+    _msg = _flash_payload.get("message", "")
+    _expires_at = float(_flash_payload.get("expires_at", 0))
+    if _msg and time.time() <= _expires_at:
+        st.success(_msg)
+        st.markdown(
+            """
+            <script>
+            setTimeout(() => {
+              const alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+              alerts.forEach(a => { a.style.display = 'none'; });
+            }, 3500);
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.session_state.pop(_FLASH_SUCCESS_KEY, None)
+
+
+def _flash_success_and_rerun(message: str, hide_add_employee_modal: bool = False) -> None:
+    st.session_state[_FLASH_SUCCESS_KEY] = {
+        "message": message,
+        "expires_at": time.time() + 3.5,
+    }
+    if hide_add_employee_modal:
+        st.session_state.show_add_employee = False
+    st.rerun()
+
 sub_tab1, sub_tab2 = st.tabs(["Groups", "Employees"])
 
 with sub_tab1:
@@ -30,8 +61,7 @@ with sub_tab1:
             else:
                 try:
                     service.create_group(new_group_name, new_group_description)
-                    st.success("✅ Group created!")
-                    st.rerun()
+                    _flash_success_and_rerun("✅ Group created!")
                 except Exception as e:
                     st.error(f"Error creating group: {e}")
 
@@ -60,8 +90,7 @@ with sub_tab1:
                     if st.button("Update Description", key=f"update_desc_{g.id}"):
                         try:
                             service.update_group_description(g.id, edited_description)
-                            st.success("✅ Updated!")
-                            st.rerun()
+                            _flash_success_and_rerun(f"✅ Updated description for {g.name}!")
                         except Exception as e:
                             st.error(f"Error updating description: {e}")
 
@@ -82,8 +111,7 @@ with sub_tab1:
                                 if st.button("Remove", key=f"remove_{g.id}_{emp_id}"):
                                     try:
                                         service.remove_member_from_group(g.id, emp_id)
-                                        st.success(f"✅ Removed {emp_name} from group!")
-                                        st.rerun()
+                                        _flash_success_and_rerun(f"✅ Removed {emp_name} from {g.name}!")
                                     except Exception as e:
                                         st.error(f"Error removing member: {e}")
                     else:
@@ -109,8 +137,7 @@ with sub_tab1:
                             try:
                                 emp_id = employee_options[selected_employee]
                                 service.add_member_to_group(g.id, emp_id)
-                                st.success(f"✅ Added {selected_employee} to {g.name}!")
-                                st.rerun()
+                                _flash_success_and_rerun(f"✅ Added {selected_employee} to {g.name}!")
                             except Exception as e:
                                 st.error(f"Error adding member: {e}")
                     else:
@@ -120,8 +147,7 @@ with sub_tab1:
                     if st.button("🗑️ Delete Group", key=f"delete_group_{g.id}"):
                         try:
                             service.delete_group(g.id)
-                            st.success(f"✅ Group '{g.name}' deleted!")
-                            st.rerun()
+                            _flash_success_and_rerun(f"✅ Group '{g.name}' deleted!")
                         except Exception as e:
                             st.error(f"Error deleting group: {e}")
 
@@ -156,8 +182,10 @@ def add_employee_modal():
             if st.button("Import Employees", key="import_employee_btn"):
                 try:
                     inserted_count, skipped_count = service.import_employees(uploaded_employee_file)
-                    st.success(f"✅ Import completed. Added: {inserted_count}, skipped: {skipped_count}")
-                    st.rerun()
+                    _flash_success_and_rerun(
+                        f"✅ Import completed. Added: {inserted_count}, skipped: {skipped_count}",
+                        hide_add_employee_modal=True,
+                    )
                 except Exception as e:
                     st.error(f"Error importing employees: {e}")
 
@@ -186,8 +214,10 @@ def add_employee_modal():
                     st.stop()
                 try:
                     create_employee_and_add_to_system_users(new_emp_name, new_emp_email, new_emp_role, new_sys_role_id)
-                    st.success(f"✅ Employee '{new_emp_name}' created successfully!")
-                    st.rerun()
+                    _flash_success_and_rerun(
+                        f"✅ Employee '{new_emp_name}' created successfully!",
+                        hide_add_employee_modal=True,
+                    )
                 except Exception as e:
                     st.error(f"Error creating employee: {e}")
             else:
@@ -243,8 +273,7 @@ with sub_tab2:
                                 if st.button("Remove", key=f"emp_remove_{emp.id}_{grp_id}"):
                                     try:
                                         service.remove_employee_from_group(emp.id, grp_id)
-                                        st.success(f"✅ Removed {emp.name} from {grp_name}!")
-                                        st.rerun()
+                                        _flash_success_and_rerun(f"✅ Removed {emp.name} from {grp_name}!")
                                     except Exception as e:
                                         st.error(f"Error removing from group: {e}")
                     else:
@@ -269,8 +298,7 @@ with sub_tab2:
                             try:
                                 group_id = group_options[selected_group]
                                 service.add_member_to_group(group_id, emp.id)
-                                st.success(f"✅ Added {emp.name} to {selected_group}!")
-                                st.rerun()
+                                _flash_success_and_rerun(f"✅ Added {emp.name} to {selected_group}!")
                             except Exception as e:
                                 st.error(f"Error adding to group: {e}")
                     else:

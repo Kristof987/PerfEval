@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 
+from models.campaign import Campaign
 from persistence.db.connection import get_db
-from persistence.repository.campaign_repo import CampaignRepository, CampaignRow
+from persistence.repository.campaign_repo import CampaignRepository
 from persistence.repository.evaluation_repo import EvaluationRepository
 from persistence.repository.form_repo import FormRepository
 from persistence.repository.organisation_group_repo import OrganisationGroupRepository
@@ -31,13 +32,55 @@ class CampaignService:
         self.employees = EmployeeRepository()
 
     # --- Campaign CRUD ---
-    def list_campaigns(self) -> List[CampaignRow]:
-        with self.db.connection() as conn:
-            return self.campaigns.list_campaigns(conn)
+    def list_campaigns(self) -> List[Campaign]:
+        with self.db.session() as session:
+            campaigns = self.campaigns.list_campaigns(session)
+            # Detach objects from session so they can be used after session closes
+            for c in campaigns:
+                session.expunge(c)
+            return campaigns
 
-    def get_campaign(self, campaign_id: int) -> Optional[CampaignRow]:
+    def get_campaign(self, campaign_id: int) -> Optional[Campaign]:
+        with self.db.session() as session:
+            campaign = self.campaigns.get_campaign(session, campaign_id)
+            if campaign is not None:
+                session.expunge(campaign)
+            return campaign
+
+    def get_campaign_counts(self, campaign_id: int) -> Dict[str, int]:
+        """Return completed and total evaluation counts for a single campaign."""
         with self.db.connection() as conn:
-            return self.campaigns.get_campaign(conn, campaign_id)
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        COUNT(id) FILTER (WHERE status = 'completed') AS completed,
+                        COUNT(id) AS total
+                    FROM evaluation
+                    WHERE campaign_id = %s
+                """, (campaign_id,))
+                row = cur.fetchone()
+                return {"completed": row[0] or 0, "total": row[1] or 0}
+
+    def get_all_campaign_counts(self) -> Dict[int, Dict[str, int]]:
+        """Return completed and total evaluation counts for all campaigns.
+
+        Returns a dict keyed by campaign_id:
+            {campaign_id: {"completed": int, "total": int}}
+        """
+        with self.db.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        campaign_id,
+                        COUNT(id) FILTER (WHERE status = 'completed') AS completed,
+                        COUNT(id) AS total
+                    FROM evaluation
+                    GROUP BY campaign_id
+                """)
+                return {
+                    row[0]: {"completed": row[1] or 0, "total": row[2] or 0}
+                    for row in cur.fetchall()
+                }
 
     def create_campaign(self, name: str, description: str, start_date: datetime,
                         end_date: Optional[datetime], comment: Optional[str]) -> int:

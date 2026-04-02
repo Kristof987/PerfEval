@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import json
 
 
@@ -138,3 +138,87 @@ class EvaluationRepository:
                 questions = row[1] or []
                 return {"answers": answers, "questions": questions}
             return None
+
+    def get_evaluatee_evaluations_grouped(
+        self, conn, evaluatee_id: int, campaign_id: int
+    ) -> Dict:
+        """
+        Returns all completed evaluations for a given evaluatee in a campaign,
+        grouped by form name, then by section.
+
+        Output structure:
+        {
+            "evaluatee_id": int,
+            "campaign_id": int,
+            "forms": {
+                "<form_name>": {
+                    "<section_name>": [
+                        {
+                            "evaluator_role": str,
+                            "question": str,
+                            "question_type": str,
+                            "answer": any
+                        },
+                        ...
+                    ],
+                    ...
+                },
+                ...
+            }
+        }
+        """
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    f.name        AS form_name,
+                    f.questions   AS form_questions,
+                    e.answers     AS eval_answers,
+                    r.name        AS evaluator_role
+                FROM evaluation e
+                JOIN form f ON e.form_id = f.id
+                JOIN organisation_employees evaluator ON e.evaluator_id = evaluator.id
+                LEFT JOIN organisation_roles r ON evaluator.org_role_id = r.id
+                WHERE e.evaluatee_id = %s
+                  AND e.campaign_id  = %s
+                  AND e.status       = 'completed'
+                ORDER BY f.name
+            """, (evaluatee_id, campaign_id))
+
+            rows = cur.fetchall()
+
+        # form_name -> section_name -> list of qa dicts
+        forms: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+
+        for form_name, form_questions_raw, eval_answers_raw, evaluator_role in rows:
+            # Deserialise if stored as string
+            if isinstance(form_questions_raw, str):
+                form_questions = json.loads(form_questions_raw)
+            else:
+                form_questions = form_questions_raw or []
+
+            if isinstance(eval_answers_raw, str):
+                eval_answers = json.loads(eval_answers_raw)
+            else:
+                eval_answers = eval_answers_raw or {}
+
+            sections = forms.setdefault(form_name, {})
+
+            for question in form_questions:
+                q_id      = str(question.get("id", ""))
+                q_text    = question.get("text", "")
+                q_type    = question.get("type", "text")
+                q_section = question.get("section", "General")
+                answer    = eval_answers.get(q_id)
+
+                sections.setdefault(q_section, []).append({
+                    "evaluator_role": evaluator_role or "unknown",
+                    "question":       q_text,
+                    "question_type":  q_type,
+                    "answer":         answer,
+                })
+
+        return {
+            "evaluatee_id": evaluatee_id,
+            "campaign_id":  campaign_id,
+            "forms":        forms,
+        }

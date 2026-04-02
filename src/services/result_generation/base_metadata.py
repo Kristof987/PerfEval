@@ -1,6 +1,4 @@
-
 import json
-
 
 class BaseMetadata:
     def __init__(self, question, answer, question_type, competence, evaluator_role):

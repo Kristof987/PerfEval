@@ -1,4 +1,6 @@
 import streamlit as st
+import pandas as pd
+from io import BytesIO
 from services.form_builder_service import (
     FormBuilderService,
     QUESTION_TYPES,
@@ -6,16 +8,49 @@ from services.form_builder_service import (
     new_question,
 )
 
-st.title("📋 Form Builder")
+st.markdown(
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"/>',
+    unsafe_allow_html=True,
+)
+
+st.title(":material/assignment: Form Builder")
 st.write("Create and manage performance evaluation forms with sections and questions.")
 
 svc = FormBuilderService()
+
+
+def _legacy_multi_import(uploaded_file) -> list[int]:
+    uploaded_file.seek(0)
+    df = pd.read_excel(uploaded_file, sheet_name="form_questions")
+    if "Form Name" not in df.columns:
+        raise ValueError("Missing column: Form Name")
+
+    cleaned_df = df.dropna(how="all")
+    form_names = []
+    for raw_name in cleaned_df["Form Name"].tolist():
+        name = str(raw_name).strip() if pd.notna(raw_name) else ""
+        if name and name not in form_names:
+            form_names.append(name)
+
+    if not form_names:
+        raise ValueError("Form Name is required.")
+
+    created_ids = []
+    for form_name in form_names:
+        form_subset = cleaned_df[cleaned_df["Form Name"].astype(str).str.strip() == form_name]
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            form_subset.to_excel(writer, index=False, sheet_name="form_questions")
+        buffer.seek(0)
+        created_ids.append(svc.import_form_from_excel(buffer))
+
+    return created_ids
 
 if "fb_current_form_id" not in st.session_state:
     st.session_state.fb_current_form_id = None
 
 st.divider()
-tab_list, tab_new = st.tabs(["📋 My Forms", "➕ New Form"])
+tab_list, tab_new = st.tabs([":material/assignment: My Forms", ":material/add: New Form"])
 
 # -------------------------
 # NEW FORM
@@ -28,15 +63,64 @@ with tab_new:
 
         if st.form_submit_button("Create Form", type="primary"):
             if not nf_title.strip():
-                st.error("❌ Please enter a form title.")
+                st.error("Please enter a form title.")
             else:
                 try:
                     fid = svc.create_form(nf_title.strip(), nf_desc.strip())
-                    st.success(f"✅ Form **{nf_title}** created!")
+                    st.success(f"Form **{nf_title}** created!")
                     st.session_state.fb_current_form_id = fid
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error creating form: {e}")
+
+    st.divider()
+    st.subheader("Import Form from Excel")
+    st.caption("Download the template, fill it out, then upload it to create a new form.")
+
+    template_bytes = svc.get_form_import_template_bytes()
+    st.download_button(
+        "Download form import template",
+        data=template_bytes,
+        file_name="form_import_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        icon=":material/download:",
+        use_container_width=True,
+    )
+
+    import_file = st.file_uploader(
+        "Upload completed form template (.xlsx)",
+        type=["xlsx"],
+        key="fb_form_import_file",
+    )
+
+    if st.button(
+        "Import form from Excel",
+        type="primary",
+        icon=":material/upload_file:",
+        use_container_width=True,
+    ):
+        if import_file is None:
+            st.error("Please upload an .xlsx file first.")
+        else:
+            try:
+                if hasattr(svc, "import_forms_from_excel"):
+                    imported_form_ids = svc.import_forms_from_excel(import_file)
+                else:
+                    imported_form_ids = _legacy_multi_import(import_file)
+                st.success(f"{len(imported_form_ids)} form(s) imported successfully.")
+                st.session_state.fb_current_form_id = imported_form_ids[-1]
+                st.rerun()
+            except Exception as e:
+                if "Only one Form Name is allowed per uploaded file" in str(e):
+                    try:
+                        imported_form_ids = _legacy_multi_import(import_file)
+                        st.success(f"{len(imported_form_ids)} form(s) imported successfully.")
+                        st.session_state.fb_current_form_id = imported_form_ids[-1]
+                        st.rerun()
+                    except Exception as fallback_error:
+                        st.error(f"Error importing form: {fallback_error}")
+                else:
+                    st.error(f"Error importing form: {e}")
 
 # -------------------------
 # LIST + EDIT
@@ -48,7 +132,7 @@ with tab_list:
         st.info("No forms yet. Switch to **➕ New Form** to create one.")
         st.stop()
 
-    form_options = {f"{f.name}  (ID: {f.id})": f.id for f in all_forms}
+    form_options = {f"{f.name}": f.id for f in all_forms}
 
     default_idx = 0
     if st.session_state.fb_current_form_id in form_options.values():
@@ -71,7 +155,7 @@ with tab_list:
 
     # Header card
     with st.container(border=True):
-        hcol1, hcol2 = st.columns([5, 1])
+        hcol1, hcol2 = st.columns([12, 1])
         with hcol1:
             st.markdown(f"## {form_name}")
             if form_desc:
@@ -79,7 +163,8 @@ with tab_list:
             total_q = sum(len(s.get("questions", [])) for s in sections)
             st.caption(f"**{total_q}** question(s) across **{len(sections)}** section(s)")
         with hcol2:
-            if st.button("🗑️ Delete form", key=f"del_form_{form_id}"):
+            st.write("")  # spacer — a gombot a cím mellé igazítja
+            if st.button("", icon=":material/delete:", key=f"del_form_{form_id}"):
                 try:
                     svc.delete_form(form_id)
                     st.session_state.fb_current_form_id = None
@@ -96,29 +181,44 @@ with tab_list:
         questions = section.get("questions", [])
 
         with st.container(border=True):
-            st.markdown(
-                f"""<div style="background:#4285F4;color:white;padding:8px 14px;
-                border-radius:6px;font-weight:600;font-size:1.05rem;margin-bottom:10px">
-                📂 {sec_title}</div>""",
-                unsafe_allow_html=True,
-            )
+            sec_head_col, sec_ctrl2 = st.columns([12, 1])
+            with sec_head_col:
+                st.markdown(
+                    f"""<div style="background:#f8fafc;color:#0f172a;padding:8px 14px;
+                    border-left:3px solid #cbd5e1;border-radius:6px;font-weight:600;font-size:1.05rem;margin-bottom:10px;
+                    display:flex;align-items:center;gap:8px">
+                    <span class="material-symbols-outlined" style="font-size:1.2rem;font-weight:400;line-height:1">folder</span>
+                    {sec_title}</div>""",
+                    unsafe_allow_html=True,
+                )
 
-            _, sec_ctrl2 = st.columns([6, 1])
+            rename_key = f"show_rename_sec_{form_id}_{sec_idx}"
             with sec_ctrl2:
-                if st.button(
-                    "🗑️ Section",
-                    key=f"del_sec_{form_id}_{sec_idx}",
-                    help="Delete this section and all its questions",
-                ):
-                    sections.pop(sec_idx)
-                    content["sections"] = sections
-                    try:
-                        svc.save_content(form_id, content)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error saving form: {e}")
+                rcol, dcol = st.columns([1, 1])
+                with rcol:
+                    if st.button(
+                            "",
+                            icon=":material/edit:",
+                            key=f"rename_btn_{form_id}_{sec_idx}",
+                            help="Rename section",
+                    ):
+                        st.session_state[rename_key] = not st.session_state.get(rename_key, False)
+                with dcol:
+                    if st.button(
+                            "",
+                            icon=":material/delete:",
+                            key=f"del_sec_{form_id}_{sec_idx}",
+                            help="Delete this section and all its questions",
+                    ):
+                        sections.pop(sec_idx)
+                        content["sections"] = sections
+                        try:
+                            svc.save_content(form_id, content)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving form: {e}")
 
-            with st.expander("✏️ Rename section", expanded=False):
+            if st.session_state.get(rename_key, False):
                 with st.form(f"fb_rename_sec_{form_id}_{sec_idx}"):
                     new_sec_name = st.text_input(
                         "New section name",
@@ -131,6 +231,7 @@ with tab_list:
                             content["sections"] = sections
                             try:
                                 svc.save_content(form_id, content)
+                                st.session_state[rename_key] = False
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving form: {e}")
@@ -143,7 +244,7 @@ with tab_list:
             else:
                 for q_idx, q in enumerate(questions):
                     qtype = q.get("type", "text")
-                    type_icon, type_label = QUESTION_TYPES.get(qtype, ("❓", "Unknown"))
+                    type_icon, type_label = QUESTION_TYPES.get(qtype, (":material/help:", "Unknown"))
                     req_star = " \\*" if q.get("required") else ""
 
                     qcol1, qcol2 = st.columns([10, 1])
@@ -182,7 +283,7 @@ with tab_list:
                             )
 
                     with qcol2:
-                        if st.button("🗑️", key=f"del_q_{form_id}_{sec_idx}_{q_idx}", help="Delete question"):
+                        if st.button("", icon=":material/delete:", key=f"del_q_{form_id}_{sec_idx}_{q_idx}", help="Delete question"):
                             sections[sec_idx]["questions"].pop(q_idx)
                             content["sections"] = sections
                             try:
@@ -194,7 +295,7 @@ with tab_list:
                     st.write("")
 
             # Add question expander
-            with st.expander(f"➕ Add question to \"{sec_title}\"", expanded=False):
+            with st.expander(f":material/add: Add question to \"{sec_title}\"", expanded=False):
                 ss_key = f"fb_qtype_{form_id}_{sec_idx}"
                 if ss_key not in st.session_state:
                     st.session_state[ss_key] = "text"
@@ -238,17 +339,17 @@ with tab_list:
                     else:
                         aq_options_raw, aq_rating_min, aq_rating_max, aq_slider_labels_raw = "", 1, 5, ""
 
-                    if st.form_submit_button("Add Question", type="primary"):
+                    if st.form_submit_button("Add Question", icon=":material/add:", type="primary"):
                         if not aq_text.strip():
-                            st.error("❌ Please enter a question text.")
+                            st.error("Please enter a question text.")
                         elif aq_type == "multiple_choice" and not aq_options_raw.strip():
-                            st.error("❌ Please enter at least one option.")
+                            st.error("Please enter at least one option.")
                         elif aq_type == "rating" and int(aq_rating_min) >= int(aq_rating_max):
-                            st.error("❌ Min value must be less than Max value.")
+                            st.error("Min value must be less than Max value.")
                         elif aq_type == "slider_labels":
                             slider_options = [line.strip() for line in aq_slider_labels_raw.splitlines() if line.strip()]
                             if len(slider_options) < 2:
-                                st.error("❌ Please enter at least 2 options.")
+                                st.error("Please enter at least 2 options.")
                                 st.stop()
 
                             nq = new_question(
@@ -261,7 +362,7 @@ with tab_list:
                             content["sections"] = sections
                             try:
                                 svc.save_content(form_id, content)
-                                st.success("✅ Question added!")
+                                st.success("Question added!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving form: {e}")
@@ -283,7 +384,7 @@ with tab_list:
                             content["sections"] = sections
                             try:
                                 svc.save_content(form_id, content)
-                                st.success("✅ Question added!")
+                                st.success("Question added!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving form: {e}")
@@ -301,17 +402,17 @@ with tab_list:
                 label_visibility="collapsed",
             )
         with ns_col2:
-            add_sec_btn = st.form_submit_button("➕ Add Section", type="secondary", use_container_width=True)
+            add_sec_btn = st.form_submit_button("Add Section", icon=":material/add:", type="secondary", use_container_width=True)
 
         if add_sec_btn:
             if not new_sec_title.strip():
-                st.error("❌ Please enter a section name.")
+                st.error("Please enter a section name.")
             else:
                 sections.append(new_section(new_sec_title.strip()))
                 content["sections"] = sections
                 try:
                     svc.save_content(form_id, content)
-                    st.success(f"✅ Section **{new_sec_title}** added!")
+                    st.success(f"Section **{new_sec_title}** added!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error saving form: {e}")
@@ -319,7 +420,7 @@ with tab_list:
     # Preview
     if sections and any(s.get("questions") for s in sections):
         st.divider()
-        with st.expander("👁️ Form Preview", expanded=False):
+        with st.expander(":material/visibility: Form Preview", expanded=False):
             st.markdown(f"## {form_name}")
             if form_desc:
                 st.write(form_desc)
@@ -328,8 +429,10 @@ with tab_list:
             q_global = 1
             for section in sections:
                 st.markdown(
-                    f"""<div style="background:#4285F4;color:white;padding:6px 12px;
-                    border-radius:6px;font-weight:600;margin:12px 0 8px 0">
+                    f"""<div style="background:#f8fafc;color:#0f172a;padding:6px 12px;
+                    border-left:3px solid #cbd5e1;border-radius:6px;font-weight:600;margin:12px 0 8px 0;
+                    display:flex;align-items:center;gap:8px">
+                    <span class="material-symbols-outlined" style="font-size:1.1rem;font-weight:400;line-height:1">folder</span>
                     {section.get('title','Section')}</div>""",
                     unsafe_allow_html=True,
                 )
@@ -365,3 +468,12 @@ with tab_list:
                             )
                     st.write("")
                     q_global += 1
+
+
+
+                    st.write("")
+                    q_global += 1
+
+
+
+
