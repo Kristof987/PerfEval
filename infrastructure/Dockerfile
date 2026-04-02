@@ -34,10 +34,6 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
 COPY . /app
 
-# A fat JAR-t /app/lib/-be másoljuk – ez KÍVÜL van a ./src:/app/src volume-mount-on,
-# tehát futás közben sem fedik el
-COPY --from=jar-builder /build/target/excel-writer-1.0.0.jar /app/lib/excel-writer-1.0.0.jar
-
 EXPOSE 8501
 
 CMD ["streamlit", "run", "src/main.py", "--server.address=0.0.0.0", "--server.port=8501"]
