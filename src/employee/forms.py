@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 from database.user_forms import get_user_evaluations, save_evaluation_answers
 
@@ -42,6 +43,7 @@ for campaign_name, items in campaigns.items():
                     disabled=evaluation["status"] == "completed",
                 ):
                     st.session_state.current_evaluation_id = evaluation["evaluation_id"]
+                    st.session_state["forms_scroll_to"] = f"eval_form_{evaluation['evaluation_id']}"
                     st.rerun()
 
 selected_evaluation = None
@@ -52,6 +54,23 @@ if st.session_state.current_evaluation_id:
             break
 
 if selected_evaluation:
+    form_anchor_id = f"eval_form_{selected_evaluation['evaluation_id']}"
+    st.markdown(f"<div id='{form_anchor_id}'></div>", unsafe_allow_html=True)
+    if st.session_state.get("forms_scroll_to") == form_anchor_id:
+        components.html(
+            f"""
+            <script>
+              const jump = () => {{
+                const el = window.parent.document.getElementById('{form_anchor_id}');
+                if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+              }};
+              setTimeout(jump, 80);
+            </script>
+            """,
+            height=0,
+        )
+        st.session_state["forms_scroll_to"] = None
+
     st.write("---")
     st.subheader(
         f"{selected_evaluation['form_name']} — {selected_evaluation['evaluatee_name']}"

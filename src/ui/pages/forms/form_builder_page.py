@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from io import BytesIO
 from services.form_builder_service import (
@@ -204,6 +205,8 @@ with tab_list:
                             help="Add question",
                     ):
                         st.session_state[add_q_key] = not st.session_state.get(add_q_key, False)
+                        if st.session_state[add_q_key]:
+                            st.session_state["fb_scroll_to"] = f"add_q_anchor_{form_id}_{sec_idx}"
                 with rcol:
                     if st.button(
                             "",
@@ -305,6 +308,23 @@ with tab_list:
 
             # Add question panel (toggled by + icon)
             if st.session_state.get(add_q_key, False):
+                anchor_id = f"add_q_anchor_{form_id}_{sec_idx}"
+                st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+                if st.session_state.get("fb_scroll_to") == anchor_id:
+                    components.html(
+                        f"""
+                        <script>
+                          const jump = () => {{
+                            const el = window.parent.document.getElementById('{anchor_id}');
+                            if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+                          }};
+                          setTimeout(jump, 80);
+                        </script>
+                        """,
+                        height=0,
+                    )
+                    st.session_state["fb_scroll_to"] = None
+
                 ss_key = f"fb_qtype_{form_id}_{sec_idx}"
                 if ss_key not in st.session_state:
                     st.session_state[ss_key] = "text"
