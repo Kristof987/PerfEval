@@ -181,7 +181,7 @@ with tab_list:
         questions = section.get("questions", [])
 
         with st.container(border=True):
-            sec_head_col, sec_ctrl2 = st.columns([12, 1])
+            sec_head_col, sec_ctrl2 = st.columns([12, 2])
             with sec_head_col:
                 st.markdown(
                     f"""<div style="background:#f8fafc;color:#0f172a;padding:8px 14px;
@@ -193,8 +193,17 @@ with tab_list:
                 )
 
             rename_key = f"show_rename_sec_{form_id}_{sec_idx}"
+            add_q_key = f"show_add_q_{form_id}_{sec_idx}"
             with sec_ctrl2:
-                rcol, dcol = st.columns([1, 1])
+                acol, rcol, dcol = st.columns([1, 1, 1])
+                with acol:
+                    if st.button(
+                            "",
+                            icon=":material/add:",
+                            key=f"add_q_btn_{form_id}_{sec_idx}",
+                            help="Add question",
+                    ):
+                        st.session_state[add_q_key] = not st.session_state.get(add_q_key, False)
                 with rcol:
                     if st.button(
                             "",
@@ -294,8 +303,8 @@ with tab_list:
 
                     st.write("")
 
-            # Add question expander
-            with st.expander(f":material/add: Add question to \"{sec_title}\"", expanded=False):
+            # Add question panel (toggled by + icon)
+            if st.session_state.get(add_q_key, False):
                 ss_key = f"fb_qtype_{form_id}_{sec_idx}"
                 if ss_key not in st.session_state:
                     st.session_state[ss_key] = "text"
@@ -363,6 +372,7 @@ with tab_list:
                             try:
                                 svc.save_content(form_id, content)
                                 st.success("Question added!")
+                                st.session_state[add_q_key] = False
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving form: {e}")
@@ -385,6 +395,7 @@ with tab_list:
                             try:
                                 svc.save_content(form_id, content)
                                 st.success("Question added!")
+                                st.session_state[add_q_key] = False
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving form: {e}")
