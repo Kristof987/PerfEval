@@ -303,7 +303,7 @@ with tab_list:
                 aq_type = st.selectbox(
                     "Question type",
                     options=list(QUESTION_TYPES.keys()),
-                    format_func=lambda t: f"{QUESTION_TYPES[t][0]}  {QUESTION_TYPES[t][1]}",
+                    format_func=lambda t: QUESTION_TYPES[t][1],
                     key=ss_key,
                 )
 
