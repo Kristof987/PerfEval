@@ -379,8 +379,8 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
                 radialaxis=dict(visible=True, range=[0, 5], tickfont_size=8, gridcolor="#e9ecf3", linecolor="#e9ecf3"),
                 angularaxis=dict(tickfont_size=9, linecolor="#e9ecf3", gridcolor="#e9ecf3"),
             ),
-            legend=dict(font_size=9, orientation="h", x=0.5, xanchor="center", y=-0.12, bgcolor="rgba(0,0,0,0)"),
-            margin=dict(l=30, r=30, t=10, b=30), height=230,
+            legend=dict(font_size=9, orientation="h", x=0.5, xanchor="center", y=-0.08, bgcolor="rgba(0,0,0,0)"),
+            margin=dict(l=30, r=30, t=10, b=22), height=230,
             font_color="#475569",
         )
         return _fig
@@ -1021,7 +1021,35 @@ elif st.session_state.cr_view == "employee":
                                     _set_value_safe(_ws, "H12", round(_non_mgr_avg - _mgr_avg, 2))
                                     _set_value_safe(_ws, "K7", _all_eval_avg)
 
-                                    _competencies = [str(_c).strip() for _c in section_names if str(_c).strip()]
+                                    # Build competence averages locally for Excel export (scale: 0-5)
+                                    _section_ratings: dict[str, list[tuple[float, float]]] = {}
+                                    for _ev in evaluations:
+                                        for _sec in _ev.get("sections", []) or []:
+                                            _sec_title = (_sec.get("title") or "General").strip() or "General"
+                                            for _q in _sec.get("questions", []) or []:
+                                                if not isinstance(_q, dict) or _q.get("type") != "rating":
+                                                    continue
+                                                _qid = str(_q.get("id", ""))
+                                                _ans = (_ev.get("answers", {}) or {}).get(_qid)
+                                                if isinstance(_ans, dict):
+                                                    _ans = _ans.get("rating")
+                                                if _ans is None or _ans == "":
+                                                    continue
+                                                try:
+                                                    _v = float(_ans)
+                                                    _m = float(_q.get("rating_max", 5))
+                                                    if _m > 0:
+                                                        _section_ratings.setdefault(_sec_title, []).append((_v, _m))
+                                                except (ValueError, TypeError):
+                                                    pass
+
+                                    _section_names = list(_section_ratings.keys())
+                                    _section_avgs_5 = [
+                                        round(sum(_v / _m * 5 for _v, _m in _rts) / len(_rts), 2)
+                                        for _rts in _section_ratings.values() if _rts
+                                    ]
+
+                                    _competencies = [str(_c).strip() for _c in _section_names if str(_c).strip()]
 
                                     def _copy_row_style(_sheet, _src_row: int, _dst_row: int) -> None:
                                         _sheet.row_dimensions[_dst_row].height = _sheet.row_dimensions[_src_row].height
@@ -1035,7 +1063,7 @@ elif st.session_state.cr_view == "employee":
                                         _start_row = 17
                                         _avg_by_comp = {
                                             str(_name).strip(): _avg
-                                            for _name, _avg in zip(section_names, section_avgs_5)
+                                            for _name, _avg in zip(_section_names, _section_avgs_5)
                                         }
 
                                         # Header row directly above first competency.

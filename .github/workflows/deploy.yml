@@ -22,8 +22,17 @@ jobs:
             cd ~/PerfEval
             git pull
 
+            # Ensure Gemini API key exists in GitHub Secrets
+            if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+              echo "GEMINI_API_KEY secret is missing in GitHub repository secrets."
+              exit 1
+            fi
+
+            # Pass key directly to docker compose env substitution (no sed/.env escaping issues)
+            export GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}'
+
             # Use base + prod override compose files
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build app
+            sudo --preserve-env=GEMINI_API_KEY docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build app
 
             # Optional: show status in Actions logs
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            sudo --preserve-env=GEMINI_API_KEY docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
