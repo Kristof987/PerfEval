@@ -7,7 +7,7 @@ from persistence.db.connection import get_db
 from persistence.repository.org_groups_repo import OrgGroupsRepository, OrgGroup
 from persistence.repository.org_employees_repo import OrgEmployeesRepository, OrgEmployee
 from persistence.repository.system_roles_repo import SystemRolesRepository, SystemRole
-from integrations.excel.employee_importer import import_employees_from_template
+from integrations.excel.employee_importer import parse_employees_from_template
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,63 @@ class OrgAdminService:
             return self.roles_repo.list_roles(conn)
 
     def import_employees(self, uploaded_file) -> tuple[int, int]:
-        return import_employees_from_template(uploaded_file)
+        imported_rows = parse_employees_from_template(uploaded_file)
+
+        inserted = 0
+        skipped = 0
+
+        with self.db.transaction() as conn:
+            roles = self.roles_repo.list_roles(conn)
+            role_name_to_id = {r.name.strip().lower(): r.id for r in roles}
+
+            for row in imported_rows:
+                if not row.name or row.name.lower() == "nan":
+                    skipped += 1
+                    continue
+
+                if self.employees_repo.employee_exists_by_name_ci(conn, row.name):
+                    skipped += 1
+                    continue
+
+                role_id = role_name_to_id.get(row.system_role)
+                if role_id is None:
+                    skipped += 1
+                    continue
+
+                employee_id = self.employees_repo.create_employee(
+                    conn,
+                    name=row.name,
+                    email=row.email,
+                    org_role_name=row.org_role,
+                )
+                self.employees_repo.create_system_user_for_employee(
+                    conn,
+                    name=row.name,
+                    username=row.name,
+                    email=row.email,
+                    sys_role_id=role_id,
+                    employee_id=employee_id,
+                )
+                inserted += 1
+
+        return inserted, skipped
+
+    def create_employee(self, name: str, email: str, org_role: str | None, system_role_id: int) -> None:
+        with self.db.transaction() as conn:
+            employee_id = self.employees_repo.create_employee(
+                conn,
+                name=name,
+                email=email,
+                org_role_name=org_role if org_role else None,
+            )
+            self.employees_repo.create_system_user_for_employee(
+                conn,
+                name=name,
+                username=name,
+                email=email,
+                sys_role_id=system_role_id,
+                employee_id=employee_id,
+            )
 
     def get_employee_template_path(self) -> Path:
         return Path("datafiles") / "Employee_Template.xlsx"

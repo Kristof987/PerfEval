@@ -1,8 +1,6 @@
 import streamlit as st
 import time
 
-from database.import_employees import create_employee_and_add_to_system_users
-from database.system_users import get_system_roles
 from services.org_admin_service import OrgAdminService
 from persistence.repository.org_groups_repo import OrgGroupsRepository
 from persistence.repository.org_employees_repo import OrgEmployeesRepository
@@ -194,9 +192,9 @@ def add_employee_modal():
         new_emp_name = st.text_input("Employee Name", key="new_emp_name")
         new_emp_email = st.text_input("Employee Email", key="new_emp_email")
         new_emp_role = st.text_input("Employee Role (optional)", key="new_emp_role")
-        roles = get_system_roles()
+        roles = service.list_system_roles()
         if roles:
-            system_role_options = {role["name"]: role["id"] for role in roles}
+            system_role_options = {role.name: role.id for role in roles}
             selected_system_role = st.selectbox(
                 "System Role",
                 options=list(system_role_options.keys()),
@@ -213,7 +211,7 @@ def add_employee_modal():
                     st.warning("Please select a System Role.")
                     st.stop()
                 try:
-                    create_employee_and_add_to_system_users(new_emp_name, new_emp_email, new_emp_role, new_sys_role_id)
+                    service.create_employee(new_emp_name, new_emp_email, new_emp_role, new_sys_role_id)
                     _flash_success_and_rerun(
                         f"✅ Employee '{new_emp_name}' created successfully!",
                         hide_add_employee_modal=True,

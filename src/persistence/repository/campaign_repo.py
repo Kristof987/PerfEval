@@ -2,27 +2,37 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
 
+from sqlalchemy import select, insert
 from sqlalchemy.orm import Session
 
 from models.campaign import Campaign
 
-
 class CampaignRepository:
-    def list_campaigns(self, session: Session) -> List[Campaign]:
-        return session.query(Campaign).order_by(Campaign.start_date.desc()).all()
+    def __init__(self, session: Session):
+        self.session = session
 
-    def get_campaign(self, session: Session, campaign_id: int) -> Optional[Campaign]:
-        return session.query(Campaign).filter(Campaign.id == campaign_id).first()
+    def list_campaigns(self) -> List[Campaign]:
+        query = select(Campaign).order_by(Campaign.start_date.desc())
+        return self.session.scalars(query).all()
 
-    def create_campaign(self, conn, name: str, description: str, start_date: datetime,
+    def get_campaign(self, campaign_id: int) -> Optional[Campaign]:
+        return self.session.get(Campaign, campaign_id)
+
+    def create_campaign(self, name: str, description: str, start_date: datetime,
                         end_date: Optional[datetime], comment: Optional[str]) -> int:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO campaign (name, description, start_date, end_date, is_active, comment)
-                VALUES (%s, %s, %s, %s, TRUE, %s)
-                RETURNING id
-            """, (name, description, start_date, end_date, comment))
-            return int(cur.fetchone()[0])
+
+        campaign = Campaign(
+            name=name,
+            description=description,
+            start_date=start_date,
+            end_date=end_date,
+            is_active=True,
+            comment=comment,
+        )
+
+        self.session.add(campaign)
+        self.session.flush()
+        return int(campaign.id)
 
     def update_campaign(self, conn, campaign_id: int, name: str, description: str,
                         start_date: datetime, end_date: Optional[datetime],

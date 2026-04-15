@@ -8,6 +8,9 @@ altair
 plotly
 streamlit_plotly_events
 streamlit_card
+streamlit-shadcn-ui
+streamlit-extras
 matplotlib
 google-genai
 sqlalchemy
+streamlit-extras

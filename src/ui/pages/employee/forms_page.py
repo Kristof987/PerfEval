@@ -1,7 +1,11 @@
+import json
+
 import streamlit as st
 import streamlit.components.v1 as components
 
-from database.user_forms import get_user_evaluations, save_evaluation_answers
+from services.user_forms_service import create_user_forms_service
+
+service = create_user_forms_service()
 
 st.header("Forms")
 st.write("View and complete your assigned evaluation forms.")
@@ -14,7 +18,7 @@ if not employee_id:
 if "current_evaluation_id" not in st.session_state:
     st.session_state.current_evaluation_id = None
 
-evaluations = get_user_evaluations(employee_id)
+evaluations = service.get_user_evaluations(employee_id)
 
 if not evaluations:
     st.info("No assigned forms found.")
@@ -76,27 +80,50 @@ if selected_evaluation:
         f"{selected_evaluation['form_name']} — {selected_evaluation['evaluatee_name']}"
     )
 
-    questions = selected_evaluation.get("form_questions") or []
+    raw_questions = selected_evaluation.get("form_questions")
+    if isinstance(raw_questions, str):
+        try:
+            raw_questions = json.loads(raw_questions)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw_questions = []
+
+    if isinstance(raw_questions, list):
+        questions = {"sections": [{"title": "General", "questions": raw_questions}]}
+    elif isinstance(raw_questions, dict) and isinstance(raw_questions.get("sections"), list):
+        questions = raw_questions
+    else:
+        questions = {"sections": []}
+
     answers = {}
 
     with st.form("submit_form"):
         sections = questions.get("sections", [])
-        for section in sections:
+        for section_idx, section in enumerate(sections):
             section_title = section.get("title", "General")
-            st.markdown(
-                f"""
-                <div style="
-                    margin: 0.8rem 0 0.4rem 0;
-                    padding: 0.35rem 0.6rem;
-                    border-left: 3px solid #cbd5e1;
-                    background: #f8fafc;
-                    color: #0f172a;
-                    font-weight: 700;
-                    border-radius: 6px;
-                ">{section_title}</div>
-                """,
-                unsafe_allow_html=True,
+            section_state_key = (
+                f"section_open_{selected_evaluation['evaluation_id']}_{section_idx}"
             )
+            if section_state_key not in st.session_state:
+                st.session_state[section_state_key] = False
+
+            header_col, toggle_col = st.columns([6, 1])
+            with header_col:
+                st.markdown(f"**{section_title}**")
+            with toggle_col:
+                is_open = st.session_state[section_state_key]
+                if st.form_submit_button(
+                    "Hide" if is_open else "Show",
+                    key=f"toggle_section_{selected_evaluation['evaluation_id']}_{section_idx}",
+                    type="secondary",
+                ):
+                    st.session_state[section_state_key] = not is_open
+                    st.rerun()
+
+            if not st.session_state[section_state_key]:
+                st.caption("Section is collapsed")
+                st.write("")
+                continue
+
             for idx, question in enumerate(section.get("questions", [])):
                 q_id = question.get("id", idx)
                 q_text = question.get("text", "")
@@ -146,7 +173,7 @@ if selected_evaluation:
 
         submitted = st.form_submit_button("Submit")
         if submitted:
-            success = save_evaluation_answers(
+            success = service.save_evaluation_answers(
                 selected_evaluation["evaluation_id"],
                 answers,
             )

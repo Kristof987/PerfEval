@@ -1,5 +1,4 @@
 import streamlit as st
-from database.connection import get_connection
 from consts.consts import ROLES
 
 st.title("Settings")

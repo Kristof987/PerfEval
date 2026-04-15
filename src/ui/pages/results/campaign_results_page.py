@@ -4,7 +4,7 @@ import sys
 import json
 import subprocess
 from copy import copy
-from datetime import date
+from datetime import date, datetime
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -234,10 +234,55 @@ def _go_back_to_campaign_results():
     st.rerun()
 
 
+def _render_cr_breadcrumb() -> None:
+    parts = ["Campaign Results"]
+    if st.session_state.cr_selected_campaign_name:
+        parts.append(st.session_state.cr_selected_campaign_name)
+    if st.session_state.cr_view == "overall":
+        parts.append("Overall")
+    elif st.session_state.cr_view == "employee" and st.session_state.cr_selected_employee_name:
+        parts.append(st.session_state.cr_selected_employee_name)
+
+    st.caption(" / ".join(parts))
+
+
+def _participants_df_for_campaign(conn, campaign_id: int) -> pd.DataFrame:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            oe.id,
+            oe.name,
+            oe.email,
+            COALESCE(oe.org_role_name, 'No role') AS role,
+            COALESCE(ev.completed_count, 0) AS completed_evaluations
+        FROM organisation_employees oe
+        JOIN employee_groups eg ON oe.id = eg.employee_id
+        JOIN campaign_groups cg ON eg.group_id = cg.group_id
+        LEFT JOIN (
+            SELECT evaluatee_id, COUNT(*) AS completed_count
+            FROM evaluation
+            WHERE campaign_id = %s AND status = 'completed'
+            GROUP BY evaluatee_id
+        ) ev ON ev.evaluatee_id = oe.id
+        WHERE cg.campaign_id = %s
+        GROUP BY oe.id, oe.name, oe.email, oe.org_role_name, ev.completed_count
+        ORDER BY oe.name ASC
+        """,
+        (campaign_id, campaign_id),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    return pd.DataFrame(rows, columns=["id", "name", "email", "role", "completed_evaluations"])
+
+
 def _render_summary_dashboard(evaluations: list, key_prefix: str = "overall"):
     if not evaluations:
         st.info("No completed evaluations found for this campaign.")
         return
+
+    if len(evaluations) < 3:
+        st.warning("Low data quality: fewer than 3 completed evaluations. Insights may be unstable.")
 
     st.markdown("""
 <style>
@@ -480,7 +525,7 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             )])
             _rb_fig.update_layout(
                 **{**_BASE_LAY, "margin": dict(l=10, r=10, t=4, b=30), "paper_bgcolor": "#ffffff", "plot_bgcolor": "#ffffff"},
-                yaxis=dict(range=[0, 5], showgrid=True, gridcolor="rgba(0,0,0,0.04)", zeroline=False, showline=False, tickfont_size=9),
+                yaxis=dict(range=[0, 5], title="Score (1-5)", showgrid=True, gridcolor="rgba(0,0,0,0.04)", zeroline=False, showline=False, tickfont_size=9),
                 xaxis=dict(showgrid=False, zeroline=False, showline=False, tickfont_size=9),
                 height=160,
             )
@@ -580,6 +625,7 @@ def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
 # EMPLOYEE RESULT VIEW
 # =========================================================
 if st.session_state.cr_view == "overall":
+    _render_cr_breadcrumb()
     st.title("Campaign Overall Results")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
     st.divider()
@@ -638,6 +684,8 @@ if st.session_state.cr_view == "overall":
         _go_back_to_campaign_results()
 
 elif st.session_state.cr_view == "employee":
+
+    _render_cr_breadcrumb()
 
     st.title(f"Employee Evaluation Results - {st.session_state.cr_selected_employee_name}")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
@@ -715,7 +763,11 @@ elif st.session_state.cr_view == "employee":
             if role_name not in role_names:
                 role_names.append(role_name)
 
-        subpage_labels = ["📈 Summary", "🙋 Self Evaluation"] + [f"👥 {r} Role Feedback" for r in role_names]
+        # Keep the classic structure explicitly visible: Summary / Self Evaluation / Role feedback tabs
+        subpage_labels = ["Summary", "Self Evaluation"] + [f"{r} Role Feedback" for r in role_names]
+        if not role_names:
+            subpage_labels.append("Role Feedback")
+
         subpages = st.tabs(subpage_labels)
 
         with subpages[1]:
@@ -725,6 +777,10 @@ elif st.session_state.cr_view == "employee":
             with subpages[idx + 2]:
                 role_evals = [ev for ev in non_self_evaluations if ev.get("evaluator_role") == role_name]
                 _render_grouped_answers(role_evals, key_prefix=f"results_role_{idx}")
+
+        if not role_names:
+            with subpages[2]:
+                st.info("No role-based feedback available yet for this employee.")
 
         with subpages[0]:
             if not evaluations:
@@ -1393,11 +1449,12 @@ elif st.session_state.cr_view == "employee":
 # CAMPAIGN RESULTS VIEW
 # =========================================================
 else:
+    _render_cr_breadcrumb()
     st.title("Campaign Results")
 
     # Load campaigns
     with db.session() as session:
-        campaigns = campaign_repo.list_campaigns(session)
+        campaigns = campaign_repo.list_campaigns()
         for c in campaigns:
             session.expunge(c)
     campaign_options = ["-- Select a campaign --"]
@@ -1422,41 +1479,760 @@ else:
         st.session_state.cr_selected_campaign_name = selected_campaign
 
         with db.connection() as conn:
+            participants_df = _participants_df_for_campaign(conn, campaign_id)
+
             cur = conn.cursor()
-            cur.execute("""
-                SELECT DISTINCT oe.id, oe.name, oe.email, oe.org_role_name
-                FROM organisation_employees oe
-                JOIN employee_groups eg ON oe.id       = eg.employee_id
-                JOIN campaign_groups cg ON eg.group_id = cg.group_id
-                WHERE cg.campaign_id = %s
-                ORDER BY oe.name ASC
-            """, (campaign_id,))
-            employees = [
-                {"id": r[0], "name": r[1], "email": r[2], "role": r[3]}
-                for r in cur.fetchall()
-            ]
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM evaluation
+                WHERE campaign_id = %s AND status = 'completed'
+                """,
+                (campaign_id,),
+            )
+            total_completed = int(cur.fetchone()[0] or 0)
             cur.close()
 
+        participant_count = int(len(participants_df))
+        participants_with_feedback = int((participants_df["completed_evaluations"] > 0).sum()) if participant_count else 0
+        participation_rate = (participants_with_feedback / participant_count * 100) if participant_count else 0.0
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Participants", participant_count)
+        k2.metric("Completed Evaluations", total_completed)
+        k3.metric("Participants with Feedback", participants_with_feedback)
+        k4.metric("Coverage", f"{participation_rate:.0f}%")
+
+        if total_completed < 3:
+            st.warning("Low data quality: too few completed evaluations for reliable campaign-level insight.")
+
         st.divider()
 
-        if st.button("📊 Overall", key="btn_overall_summary"):
-            st.session_state.cr_view = "overall"
-            st.rerun()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        with st.container(border=True):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            st.caption("Filters")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f1, f2 = st.columns([2.5, 1.5])
+            with f1:
+                search_name = st.text_input(
+                    "Search participant",
+                    key="cr_filter_search_name",
+                    placeholder="Type name or email...",
+                ).strip().lower()
+
+            roles = sorted(participants_df["role"].fillna("No role").astype(str).unique().tolist()) if participant_count else []
+            with f2:
+                selected_roles = st.multiselect(
+                    "Role",
+                    options=roles,
+                    default=[],
+                    key="cr_filter_roles",
+                    placeholder="Select role(s)...",
+                )
+
+            f3, f4 = st.columns([3.0, 1.0])
+            with f3:
+                max_completed = int(participants_df["completed_evaluations"].max()) if participant_count else 0
+                min_completed = st.slider(
+                    "Minimum completed evaluations",
+                    min_value=0,
+                    max_value=max_completed if max_completed > 0 else 0,
+                    value=0,
+                    key="cr_filter_min_completed",
+                )
+            with f4:
+                st.write("")
+                reset = st.button("Reset filters", key="cr_reset_filters", use_container_width=True)
+
+            if reset:
+                st.session_state.cr_filter_search_name = ""
+                st.session_state.cr_filter_roles = []
+                st.session_state.cr_filter_min_completed = 0
+                st.rerun()
+
+        filtered_df = participants_df.copy()
+        if participant_count:
+            if search_name:
+                filtered_df = filtered_df[
+                    filtered_df["name"].str.lower().str.contains(search_name, na=False)
+                    | filtered_df["email"].fillna("").str.lower().str.contains(search_name, na=False)
+                ]
+            if selected_roles:
+                filtered_df = filtered_df[filtered_df["role"].isin(selected_roles)]
+            filtered_df = filtered_df[filtered_df["completed_evaluations"] >= int(min_completed)]
+
+        chips = []
+        if search_name:
+            chips.append(f"search: {search_name}")
+        if selected_roles:
+            chips.append(f"roles: {', '.join(selected_roles)}")
+        if int(min_completed) > 0:
+            chips.append(f"min completed: {int(min_completed)}")
+        if chips:
+            st.caption("Active filters: " + " | ".join(chips))
+
+        csv_df = filtered_df.copy()
+        export_xlsx_bytes = None
+        if not csv_df.empty:
+            csv_df["campaign_name"] = selected_campaign
+            csv_df["generated_at"] = datetime.utcnow().isoformat()
+            csv_df["active_filters"] = "; ".join(chips) if chips else "none"
+
+            export_df = csv_df.rename(
+                columns={
+                    "completed_evaluations": "completed evaluations",
+                    "campaign_name": "campaign",
+                    "generated_at": "generated at",
+                    "active_filters": "active filters",
+                }
+            )
+
+            export_buffer = io.BytesIO()
+            with pd.ExcelWriter(export_buffer, engine="openpyxl") as writer:
+                export_df.to_excel(writer, index=False, sheet_name="Participants")
+            export_xlsx_bytes = export_buffer.getvalue()
+
+        with st.container(border=True):
+            st.caption("Export")
+            st.download_button(
+                ":material/download: Export participants (Excel)",
+                data=export_xlsx_bytes if export_xlsx_bytes is not None else b"",
+                file_name=f"campaign_participants_{campaign_id}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="cr_export_participants_xlsx",
+                use_container_width=True,
+                disabled=(export_xlsx_bytes is None),
+                type="secondary",
+            )
 
         st.divider()
 
-        st.metric("Participants", len(employees))
+        if not filtered_df.empty:
+            preview_df = filtered_df[["name", "email", "role", "completed_evaluations"]].copy()
+            preview_df = preview_df.sort_values(by=["completed_evaluations", "name"], ascending=[False, True])
+            preview_df = preview_df.rename(
+                columns={
+                    "name": "Name",
+                    "email": "Email",
+                    "role": "Role",
+                    "completed_evaluations": "Completed evaluations",
+                }
+            )
+            st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
-        st.divider()
+            st.divider()
 
-        if employees:
+            with st.container(border=True):
+                st.caption("Navigation")
+                if st.button(
+                    ":material/assessment: Overall Results",
+                    key="btn_overall_summary",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    st.session_state.cr_view = "overall"
+                    st.rerun()
+
+            st.divider()
+
+            employees = filtered_df.to_dict("records")
             for emp in employees:
                 with st.container(border=True):
                     col_name, col_role, col_arrow = st.columns([3, 1, 1])
                     with col_name:
                         st.markdown(f"**{emp['name']}**")
+                        st.caption(emp.get("email") or "")
                     with col_role:
                         st.caption(emp["role"] if emp["role"] else "No role")
+                        st.caption(f"Completed: {int(emp.get('completed_evaluations', 0))}")
                     with col_arrow:
                         if st.button("→", key=f"btn_{emp['id']}"):
                             st.session_state.cr_view                  = "employee"
@@ -1464,7 +2240,7 @@ else:
                             st.session_state.cr_selected_employee_name = emp["name"]
                             st.rerun()
         else:
-            st.info("No participants found for this campaign.")
+            st.info("No participants match the selected filters.")
 
     else:
         st.session_state.cr_selected_campaign_id   = None

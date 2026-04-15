@@ -1,8 +1,29 @@
 import random
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import streamlit as st
+
+try:
+    import streamlit_shadcn_ui as ui
+except ModuleNotFoundError:
+    ui = None
+
+try:
+    from streamlit_extras.scroll_to_element import scroll_to_element
+except ModuleNotFoundError:
+    scroll_to_element = None
+
+try:
+    from streamlit_extras.scroll_to_element import _SCROLL_COMPONENT, _key_to_class_name
+except Exception:
+    _SCROLL_COMPONENT = None
+    _key_to_class_name = None
+
+try:
+    from streamlit_extras.steps import steps as steps_component
+except ModuleNotFoundError:
+    steps_component = None
 
 from consts.consts import ICONS
 from services.campaign_service import CampaignService
@@ -61,6 +82,9 @@ _defaults = {
     "matrix_group_id": None,
     "show_delete_confirm": False,
     "delete_campaign_id": None,
+    "selected_campaign_id": None,
+    "scroll_to_selected_campaign": False,
+    "scroll_request_id": 0,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -89,6 +113,122 @@ if _campaign_flash:
 def _campaign_flash_success_and_rerun(message: str) -> None:
     st.session_state[_CAMPAIGN_FLASH_KEY] = message
     st.rerun()
+
+
+def _scroll_to_element_force(key: str) -> None:
+    if not key:
+        return
+
+    if _SCROLL_COMPONENT is not None and _key_to_class_name is not None:
+        request_id = int(st.session_state.get("scroll_request_id", 0)) + 1
+        st.session_state.scroll_request_id = request_id
+
+        with st._event:
+            _SCROLL_COMPONENT(
+                data={
+                    "class_name": _key_to_class_name(key),
+                    "scroll_mode": "smooth",
+                    "alignment": "start",
+                    "request_id": request_id,
+                },
+                width="stretch",
+                height=0,
+                key=f"scroll_to_request_{request_id}",
+            )
+        return
+
+    if scroll_to_element is not None:
+        scroll_to_element(key, scroll_mode="smooth", alignment="start")
+
+
+def _to_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _to_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.max.time())
+    return None
+
+
+def _format_deadline(end_value):
+    end_dt = _to_datetime(end_value)
+    if end_dt is None:
+        return "No deadline", "#64748b", None
+
+    if end_dt.tzinfo is not None and end_dt.tzinfo.utcoffset(end_dt) is not None:
+        now = datetime.now(end_dt.tzinfo)
+    else:
+        now = datetime.now()
+    remaining_seconds = int((end_dt - now).total_seconds())
+
+    if remaining_seconds < 0:
+        return "Expired", "#b91c1c", remaining_seconds
+
+    days = remaining_seconds // 86400
+    hours = (remaining_seconds % 86400) // 3600
+    minutes = (remaining_seconds % 3600) // 60
+
+    if remaining_seconds >= 7 * 86400:
+        label = f"{days} days"
+    elif remaining_seconds >= 86400:
+        label = f"{days} days {hours} hours"
+    elif remaining_seconds >= 3600:
+        label = f"{hours} hours {minutes} minutes"
+    else:
+        label = f"0 hours {minutes} minutes"
+
+    return label, "#334155", remaining_seconds
+
+
+def _campaign_status_meta(campaign, completed: int, total: int):
+    today = date.today()
+    end_date = _to_date(_get(campaign, "end_date"))
+    is_active = bool(_get(campaign, "is_active"))
+    completion_pct = (completed / total * 100) if total > 0 else 0
+
+    if end_date and end_date < today:
+        return {
+            "label": "CLOSED",
+            "fg": "#991b1b",
+            "bg": "#fee2e2",
+            "rank": 4,
+            "completion_pct": completion_pct,
+        }
+
+    if is_active:
+        return {
+            "label": "ACTIVE",
+            "fg": "#065f46",
+            "bg": "#d1fae5",
+            "rank": 1,
+            "completion_pct": completion_pct,
+        }
+
+    return {
+        "label": "INACTIVE",
+        "fg": "#334155",
+        "bg": "#e2e8f0",
+        "rank": 3,
+        "completion_pct": completion_pct,
+    }
+
+
+def _status_badge_html(label: str, fg: str, bg: str) -> str:
+    return (
+        f"<span style='display:inline-block;padding:0.2rem 0.55rem;border-radius:9999px;"
+        f"font-size:0.76rem;font-weight:700;color:{fg};background:{bg};letter-spacing:0.02em'>{label}</span>"
+    )
 
 # ----------------------------
 # Role -> Role default form mapping (UI-only logic, storage via service)
@@ -135,11 +275,181 @@ def ensure_role_form_map(campaign_id, role_names, forms):
     return map_key
 
 
+def _resolve_campaign_name(campaign_id: int | None) -> str | None:
+    if not campaign_id:
+        return None
+    campaign = svc.get_campaign(campaign_id)
+    if not campaign:
+        return f"Campaign #{campaign_id}"
+    return _get(campaign, "name")
+
+
+def _reset_campaign_page_view_state() -> None:
+    if "create" in query_params:
+        del query_params["create"]
+
+    st.session_state.show_edit_dialog = False
+    st.session_state.edit_campaign_id = None
+    st.session_state.show_view_dialog = False
+    st.session_state.view_campaign_id = None
+    st.session_state.show_team_assignment = False
+    st.session_state.team_campaign_id = None
+    st.session_state.show_role_form_mapping = False
+    st.session_state.role_form_campaign_id = None
+    st.session_state.show_evaluation_matrix = False
+    st.session_state.matrix_campaign_id = None
+    st.session_state.matrix_group_id = None
+    st.session_state.show_delete_confirm = False
+    st.session_state.delete_campaign_id = None
+
+
+def _navigate_campaign_breadcrumb(target: str, campaign_id: int | None = None) -> None:
+    _reset_campaign_page_view_state()
+
+    if target == "create":
+        query_params["create"] = "true"
+    elif target == "details" and campaign_id:
+        st.session_state.show_view_dialog = True
+        st.session_state.view_campaign_id = campaign_id
+
+    st.rerun()
+
+
+def _campaign_breadcrumb_segments():
+    """Build breadcrumb segments from current Campaign page state."""
+    segments = [
+        {"label": "Home", "target": "list", "campaign_id": None, "current": False},
+        {"label": "Campaigns", "target": "list", "campaign_id": None, "current": True},
+    ]
+
+    if query_params.get("create") == "true":
+        segments[-1]["current"] = False
+        segments.append({"label": "Create", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if st.session_state.show_edit_dialog and st.session_state.edit_campaign_id:
+        campaign_id = st.session_state.edit_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": "details", "campaign_id": campaign_id, "current": False})
+        segments.append({"label": "Edit", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if st.session_state.show_view_dialog and st.session_state.view_campaign_id:
+        campaign_id = st.session_state.view_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": None, "campaign_id": None, "current": True})
+        segments.append({"label": "Details", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if st.session_state.show_team_assignment and st.session_state.team_campaign_id:
+        campaign_id = st.session_state.team_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": "details", "campaign_id": campaign_id, "current": False})
+        segments.append({"label": "Team Assignment", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if st.session_state.show_role_form_mapping and st.session_state.role_form_campaign_id:
+        campaign_id = st.session_state.role_form_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": "details", "campaign_id": campaign_id, "current": False})
+        segments.append({"label": "Role Mapping", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if (
+        st.session_state.show_evaluation_matrix
+        and st.session_state.matrix_campaign_id
+        and st.session_state.matrix_group_id
+    ):
+        campaign_id = st.session_state.matrix_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": "details", "campaign_id": campaign_id, "current": False})
+        segments.append({"label": "Evaluation Matrix", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    if st.session_state.show_delete_confirm and st.session_state.delete_campaign_id:
+        campaign_id = st.session_state.delete_campaign_id
+        segments[-1]["current"] = False
+        segments.append({"label": _resolve_campaign_name(campaign_id), "target": "details", "campaign_id": campaign_id, "current": False})
+        segments.append({"label": "Delete", "target": None, "campaign_id": None, "current": True})
+        return segments
+
+    return segments
+
+
+def _render_campaign_breadcrumbs():
+    segments = [s for s in _campaign_breadcrumb_segments() if s and s.get("label")]
+    if not segments:
+        return
+
+    if ui is None or not hasattr(ui, "breadcrumb"):
+        with st.container(key="campaign_breadcrumbs_wrap"):
+            cols = st.columns(len(segments) * 2 - 1)
+            col_idx = 0
+
+            for idx, seg in enumerate(segments):
+                with cols[col_idx]:
+                    is_current = idx == len(segments) - 1
+                    if (not is_current) and seg.get("target"):
+                        if st.button(seg["label"], key=f"campaign_crumb_{idx}", type="tertiary"):
+                            _navigate_campaign_breadcrumb(seg["target"], seg.get("campaign_id"))
+                    else:
+                        st.markdown(
+                            f"<span style='font-size:0.90rem;color:#0f172a;font-weight:600'>{seg['label']}</span>",
+                            unsafe_allow_html=True,
+                        )
+
+                if idx < len(segments) - 1:
+                    with cols[col_idx + 1]:
+                        st.markdown("<span style='font-size:0.90rem;color:#94a3b8'>/</span>", unsafe_allow_html=True)
+
+                col_idx += 2
+        return
+
+    breadcrumb_items = []
+    for seg in segments:
+        item = {"text": seg["label"], "isCurrentPage": bool(seg.get("current", False))}
+        breadcrumb_items.append(item)
+
+    clicked = ui.breadcrumb(
+        breadcrumb_items=breadcrumb_items,
+        class_name="text-sm mb-2",
+        key="campaign_breadcrumb_shadcn",
+    )
+
+    if clicked:
+        clicked_text = clicked.get("text") if isinstance(clicked, dict) else str(clicked)
+        for seg in segments:
+            if seg.get("label") == clicked_text and not seg.get("current") and seg.get("target"):
+                _navigate_campaign_breadcrumb(seg["target"], seg.get("campaign_id"))
+                break
+
+
 # ----------------------------
 # Page header
 # ----------------------------
-st.title(f"{ICONS['dashboard']} Campaign Management")
-st.write("Create and manage performance evaluation campaigns")
+_render_campaign_breadcrumbs()
+with st.container(border=True):
+    header_left, header_right = st.columns([0.78, 0.22], vertical_alignment="center")
+    with header_left:
+        st.markdown(
+            """
+            <div style='margin-top:0.05rem;margin-bottom:0.1rem'>
+              <div style='font-size:2.15rem;font-weight:800;color:#0f172a;line-height:1.1'>
+                Campaign Management
+              </div>
+              <div style='font-size:1rem;color:#475569;margin-top:0.45rem'>
+                Work surface for creating campaigns, tracking progress, and managing assignments.
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with header_right:
+        if query_params.get("create") != "true":
+            st.write("")
+            if st.button(f"{ICONS['add']} Create New Campaign", key="header_create_campaign_btn", type="primary", use_container_width=True):
+                query_params["create"] = "true"
+                st.rerun()
 
 # ----------------------------
 # CREATE (query param)
@@ -673,125 +983,508 @@ elif st.session_state.show_delete_confirm and st.session_state.delete_campaign_i
 # DEFAULT LIST VIEW
 # ----------------------------
 else:
-    st.write("")
-    if st.button(f"{ICONS['add']} Create New Campaign", type="primary", use_container_width=True):
-        query_params["create"] = "true"
-        st.rerun()
-
-    st.write("")
-    st.write("---")
-    st.subheader("Campaign List")
-
     campaigns = svc.list_campaigns()
     all_counts = svc.get_all_campaign_counts()
 
     if not campaigns:
+        st.session_state.selected_campaign_id = None
         st.info(f"{ICONS.get('list','📋')} No campaigns found. Create your first campaign to get started!")
     else:
+        rows = []
         for campaign in campaigns:
-            _counts = all_counts.get(_get(campaign, "id"), {"completed": 0, "total": 0})
+            campaign_id = _get(campaign, "id")
+            _counts = all_counts.get(campaign_id, {"completed": 0, "total": 0})
             completed = int(_counts.get("completed", 0) or 0)
             total = int(_counts.get("total", 0) or 0)
-            completion_pct = (completed / total * 100) if total > 0 else 0
+            start_date = _to_date(_get(campaign, "start_date"))
+            end_date = _to_date(_get(campaign, "end_date"))
+            status = _campaign_status_meta(campaign, completed, total)
+            deadline_label, deadline_color, remaining_seconds = _format_deadline(_get(campaign, "end_date"))
 
-            status_icon = ICONS["active"] if _get(campaign, "is_active") else ICONS["inactive"]
-            status_text = "ACTIVE" if _get(campaign, "is_active") else "INACTIVE"
+            rows.append(
+                {
+                    "campaign": campaign,
+                    "id": campaign_id,
+                    "name": _get(campaign, "name") or "Unnamed",
+                    "description": (_get(campaign, "description") or "").lower(),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "is_active": bool(_get(campaign, "is_active")),
+                    "completed": completed,
+                    "total": total,
+                    "completion_pct": status["completion_pct"],
+                    "status_label": status["label"],
+                    "status_fg": status["fg"],
+                    "status_bg": status["bg"],
+                    "status_rank": status["rank"],
+                    "deadline_label": deadline_label,
+                    "deadline_color": deadline_color,
+                    "remaining_seconds": remaining_seconds,
+                }
+            )
 
-            with st.container():
-                col1, col2, col3 = st.columns([3, 1, 1])
-
-                with col1:
-                    st.write(f"### {_get(campaign,'name')}")
-                    start_str = _get(campaign, "start_date").strftime("%Y-%m-%d")
-                    end_dt = _get(campaign, "end_date")
-                    end_str = end_dt.strftime("%Y-%m-%d") if end_dt else "N/A"
-                    st.caption(f"Start: {start_str} | End: {end_str}")
-
-                with col2:
-                    st.write("")
-                    st.write(f"{status_icon} **{status_text}**")
-
-                with col3:
-                    st.write("")
-                    st.write(f"**{completed}/{total}**")
-
-                st.progress(completion_pct / 100, text=f"Completion: {completion_pct:.0f}%")
-
-                col_view, col_edit, col_teams, col_role_forms, col_toggle, col_delete = st.columns(
-                    [1, 1, 1, 1, 1, 1]
+        with st.container(border=True):
+            st.markdown("#### Filters")
+            f1, f2 = st.columns([2.8, 1.2])
+            with f1:
+                search_text = st.text_input(
+                    "Search by campaign name or description",
+                    value="",
+                    key="campaign_filter_search",
+                    placeholder="Type campaign name...",
+                ).strip().lower()
+            with f2:
+                sort_by = st.selectbox(
+                    "Sort by",
+                    options=["Status", "Name", "Start date", "End date", "Completion %", "Days left"],
+                    key="campaign_filter_sort_by",
                 )
 
-                with col_view:
-                    if st.button(f"{ICONS['view']} View", key=f"view_{_get(campaign,'id')}", use_container_width=True):
-                        st.session_state.show_view_dialog = True
-                        st.session_state.view_campaign_id = _get(campaign, "id")
-                        st.rerun()
+            with st.expander("Advanced filters", expanded=False):
+                st.caption("Open and tick only the statuses you want to see.")
+                s1, s2, s3 = st.columns(3)
+                with s1:
+                    status_active = st.checkbox("ACTIVE", value=True, key="campaign_filter_status_active")
+                with s2:
+                    status_inactive = st.checkbox("INACTIVE", value=True, key="campaign_filter_status_inactive")
+                with s3:
+                    status_closed = st.checkbox("CLOSED", value=True, key="campaign_filter_status_closed")
 
-                with col_edit:
-                    if _get(campaign, "is_active"):
-                        if st.button(
-                            f"{ICONS['edit']} Edit",
-                            key=f"edit_{_get(campaign,'id')}",
-                            use_container_width=True,
-                        ):
-                            st.session_state.show_edit_dialog = True
-                            st.session_state.edit_campaign_id = _get(campaign, "id")
-                            st.rerun()
-                    else:
-                        st.button(
-                            f"{ICONS['edit']} Edit",
-                            key=f"edit_{_get(campaign,'id')}",
-                            disabled=True,
-                            use_container_width=True,
-                        )
+                selected_statuses = []
+                if status_active:
+                    selected_statuses.append("ACTIVE")
+                if status_inactive:
+                    selected_statuses.append("INACTIVE")
+                if status_closed:
+                    selected_statuses.append("CLOSED")
 
-                with col_teams:
-                    if st.button(
-                        f"{ICONS['teams']} Groups",
-                        key=f"teams_{_get(campaign,'id')}",
-                        use_container_width=True,
-                    ):
-                        forms = svc.list_forms()
-                        role_names = _list_campaign_role_names(_get(campaign, "id"))
-                        if role_names and forms:
-                            ensure_role_form_map(_get(campaign, "id"), role_names, forms)
-                        st.session_state.show_team_assignment = True
-                        st.session_state.team_campaign_id = _get(campaign, "id")
-                        st.rerun()
-
-                with col_role_forms:
-                    if st.button(
-                        f"{ICONS['matrix']} Assign forms",
-                        key=f"role_forms_{_get(campaign,'id')}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.show_role_form_mapping = True
-                        st.session_state.role_form_campaign_id = _get(campaign, "id")
-                        st.rerun()
-
-                with col_toggle:
-                    toggle_icon = ICONS["pause"] if _get(campaign, "is_active") else ICONS["play"]
-                    toggle_label = (
-                        f"{toggle_icon} Deactivate" if _get(campaign, "is_active") else f"{toggle_icon} Activate"
+                f5, = st.columns([1.2])
+                with f5:
+                    min_completion = st.slider(
+                        "Min completion %",
+                        min_value=0,
+                        max_value=100,
+                        value=0,
+                        step=5,
+                        key="campaign_filter_min_completion",
                     )
-                    if st.button(toggle_label, key=f"toggle_{_get(campaign,'id')}", use_container_width=True):
-                        try:
-                            svc.toggle_campaign(_get(campaign, "id"))
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"{ICONS['error']} Toggle failed: {e}")
 
-                with col_delete:
-                    if st.button(
-                        f"{ICONS['delete']} Delete",
-                        key=f"delete_{_get(campaign,'id')}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.show_delete_confirm = True
-                        st.session_state.delete_campaign_id = _get(campaign, "id")
+                f6, f7, f8, f9 = st.columns([1.2, 1.2, 1.2, 1.2])
+                with f6:
+                    start_from = st.date_input("Start from", value=None, key="campaign_filter_start_from")
+                with f7:
+                    start_to = st.date_input("Start to", value=None, key="campaign_filter_start_to")
+                with f8:
+                    end_from = st.date_input("End from", value=None, key="campaign_filter_end_from")
+                with f9:
+                    end_to = st.date_input("End to", value=None, key="campaign_filter_end_to")
+
+            if "campaign_filter_min_completion" not in st.session_state:
+                min_completion = 0
+            else:
+                min_completion = st.session_state.campaign_filter_min_completion
+
+            start_from = st.session_state.get("campaign_filter_start_from")
+            start_to = st.session_state.get("campaign_filter_start_to")
+            end_from = st.session_state.get("campaign_filter_end_from")
+            end_to = st.session_state.get("campaign_filter_end_to")
+
+            selected_statuses = [
+                status for status, enabled in [
+                    ("ACTIVE", st.session_state.get("campaign_filter_status_active", True)),
+                    ("INACTIVE", st.session_state.get("campaign_filter_status_inactive", True)),
+                    ("CLOSED", st.session_state.get("campaign_filter_status_closed", True)),
+                ]
+                if enabled
+            ]
+
+        filtered_rows = rows
+        if search_text:
+            filtered_rows = [
+                r
+                for r in filtered_rows
+                if search_text in r["name"].lower() or search_text in r["description"]
+            ]
+
+        if selected_statuses:
+            filtered_rows = [r for r in filtered_rows if r["status_label"] in selected_statuses]
+
+        filtered_rows = [r for r in filtered_rows if r["completion_pct"] >= float(min_completion)]
+
+        if start_from:
+            filtered_rows = [r for r in filtered_rows if r["start_date"] and r["start_date"] >= start_from]
+        if start_to:
+            filtered_rows = [r for r in filtered_rows if r["start_date"] and r["start_date"] <= start_to]
+        if end_from:
+            filtered_rows = [r for r in filtered_rows if r["end_date"] and r["end_date"] >= end_from]
+        if end_to:
+            filtered_rows = [r for r in filtered_rows if r["end_date"] and r["end_date"] <= end_to]
+
+        sort_key_map = {
+            "Status": lambda r: (r["status_rank"], r["name"].lower()),
+            "Name": lambda r: r["name"].lower(),
+            "Start date": lambda r: r["start_date"] or date.max,
+            "End date": lambda r: r["end_date"] or date.max,
+            "Completion %": lambda r: r["completion_pct"],
+            "Days left": lambda r: (r["remaining_seconds"] if r["remaining_seconds"] is not None else 10**12),
+        }
+        filtered_rows = sorted(
+            filtered_rows,
+            key=sort_key_map.get(sort_by, sort_key_map["Status"]),
+            reverse=(sort_by in {"Start date", "Completion %"}),
+        )
+
+        st.write("")
+        st.subheader("Campaign List")
+        st.caption(f"Showing {len(filtered_rows)} of {len(rows)} campaigns")
+
+        visible_ids = {r["id"] for r in filtered_rows}
+        if st.session_state.selected_campaign_id not in visible_ids:
+            st.session_state.selected_campaign_id = None
+
+        if not filtered_rows:
+            st.info("No campaigns match the selected filters.")
+            selected_campaign = None
+        else:
+            h1, h2, h3, h4, h5 = st.columns([4.2, 1.5, 2.0, 1.3, 0.7], vertical_alignment="center")
+            with h1:
+                st.caption("Campaign")
+            with h2:
+                st.caption("Status")
+            with h3:
+                st.caption("Completion")
+            with h4:
+                st.caption("Deadline")
+            with h5:
+                st.caption("Action")
+
+            st.divider()
+
+            for row in filtered_rows:
+                c1, c2, c3, c4, c5 = st.columns([4.2, 1.5, 2.0, 1.3, 0.7], vertical_alignment="center")
+                with c1:
+                    start_str = row["start_date"].strftime("%Y-%m-%d") if row["start_date"] else "N/A"
+                    end_str = row["end_date"].strftime("%Y-%m-%d") if row["end_date"] else "N/A"
+                    st.markdown(f"**{row['name']}**")
+                    st.caption(f"Start: {start_str} • End: {end_str}")
+                with c2:
+                    st.markdown(
+                        _status_badge_html(row["status_label"], row["status_fg"], row["status_bg"]),
+                        unsafe_allow_html=True,
+                    )
+                with c3:
+                    if int(row["total"]) == 0:
+                        st.markdown("**No evaluations yet**")
+                        st.progress(0.0)
+                    else:
+                        st.markdown(f"**{row['completion_pct']:.0f}%** ({row['completed']}/{row['total']})")
+                        st.progress(float(row["completion_pct"]) / 100)
+                with c4:
+                    st.markdown(
+                        f"<span style='color:{row['deadline_color']};font-weight:700'>{row['deadline_label']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with c5:
+                    if st.button("→", key=f"open_{row['id']}", use_container_width=True):
+                        st.session_state.selected_campaign_id = row["id"]
+                        st.session_state.scroll_to_selected_campaign = True
                         st.rerun()
 
-                st.write("---")
+                st.divider()
+
+            selected_campaign = next(
+                (r["campaign"] for r in filtered_rows if r["id"] == st.session_state.selected_campaign_id),
+                filtered_rows[0]["campaign"],
+            )
+            st.session_state.selected_campaign_id = _get(selected_campaign, "id")
+
+        if selected_campaign:
+            with st.container(key="selected_campaign_panel_anchor"):
+                st.write("")
+
+            st.markdown(
+                """
+                <style>
+                div[class*="st-key-view_"] button,
+                div[class*="st-key-results_"] button,
+                div[class*="st-key-edit_"] button,
+                div[class*="st-key-teams_"] button,
+                div[class*="st-key-role_forms_"] button,
+                div[class*="st-key-toggle_"] button,
+                div[class*="st-key-delete_"] button {
+                    min-height: 74px;
+                    height: 74px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    white-space: normal;
+                }
+                div[class*="st-key-delete_"] button {
+                    border-color: #ef4444;
+                    color: #b91c1c;
+                    background: #fff5f5;
+                }
+                div[class*="st-key-delete_"] button:hover {
+                    background: #fee2e2;
+                    border-color: #dc2626;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if st.session_state.get("scroll_to_selected_campaign"):
+                if scroll_to_element is not None or _SCROLL_COMPONENT is not None:
+                    _scroll_to_element_force("selected_campaign_panel_anchor")
+                else:
+                    st.markdown(
+                        """
+                        <script>
+                        setTimeout(() => {
+                            const target = window.parent.document.querySelector('.st-key-selected_campaign_panel_anchor');
+                            if (target) {
+                                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                        }, 60);
+                        </script>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                st.session_state.scroll_to_selected_campaign = False
+
+            st.write("---")
+            _counts = all_counts.get(_get(selected_campaign, "id"), {"completed": 0, "total": 0})
+            completed = int(_counts.get("completed", 0) or 0)
+            total = int(_counts.get("total", 0) or 0)
+            status_meta = _campaign_status_meta(selected_campaign, completed, total)
+            completion_pct = status_meta["completion_pct"]
+
+            col1, col2, col3 = st.columns([3, 1, 1])
+            with col1:
+                st.write(f"### {_get(selected_campaign,'name')}")
+                start_str = _get(selected_campaign, "start_date").strftime("%Y-%m-%d")
+                end_dt = _get(selected_campaign, "end_date")
+                end_str = end_dt.strftime("%Y-%m-%d") if end_dt else "N/A"
+                st.caption(f"Start: {start_str} | End: {end_str}")
+            with col2:
+                st.write("")
+                st.markdown(
+                    _status_badge_html(status_meta["label"], status_meta["fg"], status_meta["bg"]),
+                    unsafe_allow_html=True,
+                )
+            with col3:
+                st.write("")
+                if total == 0:
+                    st.write("**No evaluations yet**")
+                else:
+                    st.write(f"**{completed}/{total}**")
+
+            if total == 0:
+                st.progress(0.0, text="Completion: No evaluations yet")
+            else:
+                st.progress(completion_pct / 100, text=f"Completion: {completion_pct:.0f}% ({completed}/{total})")
+
+            selected_campaign_id = _get(selected_campaign, "id")
+            selected_campaign_name = _get(selected_campaign, "name")
+
+            # Step list between campaign header and action icons
+            if steps_component is not None:
+                step_labels = [
+                    "Campaign setup",
+                    "Assign groups",
+                    "Assignment matrix",
+                    "Assign role forms",
+                    "Collect Responses",
+                    "Review results",
+                    "Close campaign",
+                ]
+                step_tooltips = [
+                    "Campaign alapadatok és időszak beállítása.",
+                    "Csoportok hozzárendelése a kampányhoz.",
+                    "Ki kit értékeljen: értékelési mátrix feltöltése.",
+                    "Szerepkörökhöz alapértelmezett űrlapok hozzárendelése.",
+                    "A kitöltött értékelések beérkezése.",
+                    "Eredmények és statisztikák áttekintése.",
+                    "Kampány lezárása.",
+                ]
+
+                assigned_groups = svc.list_campaign_groups(selected_campaign_id)
+                has_groups = bool(assigned_groups)
+                role_defaults = svc.get_role_form_defaults(selected_campaign_id) if has_groups else {}
+                has_role_defaults = any(v is not None for v in role_defaults.values()) if role_defaults else False
+                has_generated_evaluations = total > 0
+                has_any_completion = completed > 0
+                has_closed_campaign = status_meta["label"] == "CLOSED"
+
+                current_step = 0
+                if has_groups:
+                    current_step = 1
+                if has_generated_evaluations:
+                    current_step = 2
+                if has_role_defaults:
+                    current_step = 3
+                if has_any_completion:
+                    current_step = 4
+                if has_generated_evaluations and completed == total and total > 0:
+                    current_step = 5
+                if has_closed_campaign:
+                    current_step = 6
+
+                steps_component(
+                    labels=step_labels,
+                    icons=[1, 2, 3, 4, 5, 6, 7],
+                    current=current_step,
+                    horizontal=True,
+                    key=f"campaign_steps_{selected_campaign_id}",
+                )
+
+                st.markdown(
+                    """
+                    <script>
+                    setTimeout(() => {
+                        const labels = [
+                            "Campaign setup",
+                            "Assign groups",
+                            "Assignment matrix",
+                            "Assign role forms",
+                            "Collect Responses",
+                            "Review results",
+                            "Close campaign",
+                        ];
+                        const tips = [
+                            "Campaign alapadatok és időszak beállítása.",
+                            "Csoportok hozzárendelése a kampányhoz.",
+                            "Ki kit értékeljen: értékelési mátrix feltöltése.",
+                            "Szerepkörökhöz alapértelmezett űrlapok hozzárendelése.",
+                            "A kitöltött értékelések beérkezése.",
+                            "Eredmények és statisztikák áttekintése.",
+                            "Kampány lezárása.",
+                        ];
+
+                        const root = window.parent.document;
+                        labels.forEach((label, idx) => {
+                            const nodes = root.querySelectorAll('span, div, p');
+                            nodes.forEach((n) => {
+                                if ((n.textContent || '').trim() === label) {
+                                    n.setAttribute('title', tips[idx]);
+                                    n.style.cursor = 'help';
+                                }
+                            });
+                        });
+                    }, 120);
+                    </script>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.write("")
+
+            col_view, col_results, col_edit, col_teams, col_role_forms, col_toggle, col_spacer, col_delete = st.columns([1, 1, 1, 1, 1, 1, 0.2, 1])
+
+            with col_view:
+                if st.button(
+                    f"{ICONS['view']} View",
+                    key=f"view_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Open campaign details",
+                ):
+                    st.session_state.show_view_dialog = True
+                    st.session_state.view_campaign_id = selected_campaign_id
+                    st.rerun()
+
+            with col_results:
+                if st.button(
+                    ":material/assessment: View Results",
+                    key=f"results_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Open campaign analytics and results",
+                ):
+                    st.session_state.cr_view = "campaign"
+                    st.session_state.cr_selected_campaign_id = selected_campaign_id
+                    st.session_state.cr_selected_campaign_name = selected_campaign_name
+                    st.session_state.cr_selected_employee_id = None
+                    st.session_state.cr_selected_employee_name = None
+                    st.switch_page("ui/pages/results/campaign_results_page.py")
+
+            with col_edit:
+                if _get(selected_campaign, "is_active"):
+                    if st.button(
+                        f"{ICONS['edit']} Edit",
+                        key=f"edit_{selected_campaign_id}",
+                        use_container_width=True,
+                        help="Edit campaign details",
+                    ):
+                        st.session_state.show_edit_dialog = True
+                        st.session_state.edit_campaign_id = selected_campaign_id
+                        st.rerun()
+                else:
+                    st.button(
+                        f"{ICONS['edit']} Edit",
+                        key=f"edit_{selected_campaign_id}",
+                        disabled=True,
+                        use_container_width=True,
+                        help="Inactive campaigns cannot be edited",
+                    )
+
+            with col_teams:
+                if st.button(
+                    f"{ICONS['teams']} Groups",
+                    key=f"teams_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Assign teams and manage matrix",
+                ):
+                    forms = svc.list_forms()
+                    role_names = _list_campaign_role_names(selected_campaign_id)
+                    if role_names and forms:
+                        ensure_role_form_map(selected_campaign_id, role_names, forms)
+                    st.session_state.show_team_assignment = True
+                    st.session_state.team_campaign_id = selected_campaign_id
+                    st.rerun()
+
+            with col_role_forms:
+                if st.button(
+                    f"{ICONS['matrix']} Assign forms",
+                    key=f"role_forms_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Configure role-to-form defaults",
+                ):
+                    st.session_state.show_role_form_mapping = True
+                    st.session_state.role_form_campaign_id = selected_campaign_id
+                    st.rerun()
+
+            with col_toggle:
+                toggle_icon = ICONS["pause"] if _get(selected_campaign, "is_active") else ICONS["play"]
+                toggle_label = (
+                    f"{toggle_icon} Pause" if _get(selected_campaign, "is_active") else f"{toggle_icon} Activate"
+                )
+                if st.button(
+                    toggle_label,
+                    key=f"toggle_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Pause or activate campaign",
+                ):
+                    try:
+                        svc.toggle_campaign(selected_campaign_id)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"{ICONS['error']} Toggle failed: {e}")
+
+            with col_spacer:
+                st.write("")
+
+            with col_delete:
+                if st.button(
+                    f"{ICONS['delete']} Delete",
+                    key=f"delete_{selected_campaign_id}",
+                    use_container_width=True,
+                    help="Delete campaign permanently",
+                ):
+                    st.session_state.show_delete_confirm = True
+                    st.session_state.delete_campaign_id = selected_campaign_id
+                    st.rerun()
+
+        else:
+            st.info("Choose a campaign card above to manage it.")
 
 st.write("")
 st.info(f"{ICONS['lightbulb']} **Tip:** Use the Teams button to assign groups and configure evaluation matrices for each campaign.")

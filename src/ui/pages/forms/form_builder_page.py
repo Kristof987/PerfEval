@@ -14,7 +14,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title(":material/assignment: Form Builder")
+st.title(":material/assignment: Create & Edit Forms")
 st.write("Create and manage performance evaluation forms with sections and questions.")
 
 svc = FormBuilderService()
@@ -195,8 +195,11 @@ with tab_list:
 
             rename_key = f"show_rename_sec_{form_id}_{sec_idx}"
             add_q_key = f"show_add_q_{form_id}_{sec_idx}"
+            collapse_key = f"show_questions_{form_id}_{sec_idx}"
+            if collapse_key not in st.session_state:
+                st.session_state[collapse_key] = False
             with sec_ctrl2:
-                acol, rcol, dcol = st.columns([1, 1, 1])
+                acol, ccol, rcol, dcol = st.columns([1, 1, 1, 1])
                 with acol:
                     if st.button(
                             "",
@@ -207,6 +210,15 @@ with tab_list:
                         st.session_state[add_q_key] = not st.session_state.get(add_q_key, False)
                         if st.session_state[add_q_key]:
                             st.session_state["fb_scroll_to"] = f"add_q_anchor_{form_id}_{sec_idx}"
+                with ccol:
+                    if st.button(
+                            "",
+                            icon=":material/keyboard_arrow_down:" if not st.session_state[collapse_key] else ":material/keyboard_arrow_up:",
+                            key=f"toggle_q_btn_{form_id}_{sec_idx}",
+                            help="Show/Hide questions in this section",
+                    ):
+                        st.session_state[collapse_key] = not st.session_state[collapse_key]
+                        st.rerun()
                 with rcol:
                     if st.button(
                             "",
@@ -227,7 +239,7 @@ with tab_list:
                         try:
                             svc.save_content(form_id, content)
                             st.rerun()
-                        except Exception as e:
+                        except Exception0 as e:
                             st.error(f"Error saving form: {e}")
 
             if st.session_state.get(rename_key, False):
@@ -250,64 +262,68 @@ with tab_list:
 
             st.divider()
 
+            if not st.session_state[collapse_key]:
+                st.caption("_Section collapsed. Click the expand icon to show questions._")
+
             # Questions list
-            if not questions:
-                st.caption("_No questions yet in this section._")
-            else:
-                for q_idx, q in enumerate(questions):
-                    qtype = q.get("type", "text")
-                    type_icon, type_label = QUESTION_TYPES.get(qtype, (":material/help:", "Unknown"))
-                    req_star = " \\*" if q.get("required") else ""
+            if st.session_state[collapse_key]:
+                if not questions:
+                    st.caption("_No questions yet in this section._")
+                else:
+                    for q_idx, q in enumerate(questions):
+                        qtype = q.get("type", "text")
+                        type_icon, type_label = QUESTION_TYPES.get(qtype, (":material/help:", "Unknown"))
+                        req_star = " \\*" if q.get("required") else ""
 
-                    qcol1, qcol2 = st.columns([10, 1])
-                    with qcol1:
-                        st.markdown(f"{type_icon} **{q.get('text','')}{req_star}**")
-                        st.caption(f"_{type_label}_")
+                        qcol1, qcol2 = st.columns([10, 1])
+                        with qcol1:
+                            st.markdown(f"{type_icon} **{q.get('text','')}{req_star}**")
+                            st.caption(f"_{type_label}_")
 
-                        if qtype == "multiple_choice" and q.get("options"):
-                            for opt in q["options"]:
-                                st.write(f"&nbsp;&nbsp;○ {opt}")
-                        elif qtype == "rating":
-                            lo = int(q.get("rating_min", 1))
-                            hi = int(q.get("rating_max", 5))
-                            st.markdown(
-                                "<div style='display:flex;gap:6px;margin:4px 0'>"
-                                + "".join(
-                                    f"<span style='background:#f0f2f6;border-radius:50%;width:30px;"
-                                    f"height:30px;display:flex;align-items:center;justify-content:center;"
-                                    f"font-size:0.85rem'>{i}</span>"
-                                    for i in range(lo, hi + 1)
+                            if qtype == "multiple_choice" and q.get("options"):
+                                for opt in q["options"]:
+                                    st.write(f"&nbsp;&nbsp;○ {opt}")
+                            elif qtype == "rating":
+                                lo = int(q.get("rating_min", 1))
+                                hi = int(q.get("rating_max", 5))
+                                st.markdown(
+                                    "<div style='display:flex;gap:6px;margin:4px 0'>"
+                                    + "".join(
+                                        f"<span style='background:#f0f2f6;border-radius:50%;width:30px;"
+                                        f"height:30px;display:flex;align-items:center;justify-content:center;"
+                                        f"font-size:0.85rem'>{i}</span>"
+                                        for i in range(lo, hi + 1)
+                                    )
+                                    + "</div>",
+                                    unsafe_allow_html=True,
                                 )
-                                + "</div>",
-                                unsafe_allow_html=True,
-                            )
-                        elif qtype == "slider_labels" and q.get("slider_options"):
-                            options = q["slider_options"]
-                            st.markdown(
-                                "<div style='display:flex;gap:6px;margin:4px 0'>"
-                                + "".join(
-                                    f"<span style='background:#e8f4f8;border-radius:8px;padding:4px 8px;"
-                                    f"font-size:0.8rem'>{opt}</span>"
-                                    for opt in options
+                            elif qtype == "slider_labels" and q.get("slider_options"):
+                                options = q["slider_options"]
+                                st.markdown(
+                                    "<div style='display:flex;gap:6px;margin:4px 0'>"
+                                    + "".join(
+                                        f"<span style='background:#e8f4f8;border-radius:8px;padding:4px 8px;"
+                                        f"font-size:0.8rem'>{opt}</span>"
+                                        for opt in options
+                                    )
+                                    + "</div>",
+                                    unsafe_allow_html=True,
                                 )
-                                + "</div>",
-                                unsafe_allow_html=True,
-                            )
 
-                    with qcol2:
-                        if st.button("", icon=":material/delete:", key=f"del_q_{form_id}_{sec_idx}_{q_idx}", help="Delete question"):
-                            sections[sec_idx]["questions"].pop(q_idx)
-                            content["sections"] = sections
-                            try:
-                                svc.save_content(form_id, content)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error saving form: {e}")
+                        with qcol2:
+                            if st.button("", icon=":material/delete:", key=f"del_q_{form_id}_{sec_idx}_{q_idx}", help="Delete question"):
+                                sections[sec_idx]["questions"].pop(q_idx)
+                                content["sections"] = sections
+                                try:
+                                    svc.save_content(form_id, content)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error saving form: {e}")
 
-                    st.write("")
+                        st.write("")
 
             # Add question panel (toggled by + icon)
-            if st.session_state.get(add_q_key, False):
+            if st.session_state.get(add_q_key, False) and st.session_state[collapse_key]:
                 anchor_id = f"add_q_anchor_{form_id}_{sec_idx}"
                 st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
                 if st.session_state.get("fb_scroll_to") == anchor_id:
@@ -468,8 +484,7 @@ with tab_list:
                     unsafe_allow_html=True,
                 )
                 for q in section.get("questions", []):
-                    req_mark = " *" if q.get("required") else ""
-                    st.markdown(f"**{q_global}. {q.get('text','')}{req_mark}**")
+                    st.markdown(f"**{q_global}. {q.get('text','')}**")
 
                     qtype = q.get("type")
                     if qtype == "text":
@@ -497,11 +512,6 @@ with tab_list:
                                 key=f"prev_sl_{q['id']}",
                                 disabled=True,
                             )
-                    st.write("")
-                    q_global += 1
-
-
-
                     st.write("")
                     q_global += 1
 

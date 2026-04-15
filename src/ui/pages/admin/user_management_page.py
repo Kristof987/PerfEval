@@ -1,14 +1,7 @@
 import streamlit as st
-from database.system_users import (
-    add_system_user,
-    get_all_system_users,
-    delete_system_user,
-    get_system_roles,
-    add_system_permission,
-    add_system_role,
-    get_system_permissions,
-    get_all_employees
-)
+from services.system_user_service import create_system_user_service
+
+service = create_system_user_service()
 
 st.header("User Management")
 st.write(f"You are logged in as {st.session_state.role}.")
@@ -22,7 +15,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["System Users", "System Roles", "System Permis
 with tab1:
     st.subheader("Current System Users")
     
-    users = get_all_system_users()
+    users = service.list_all_system_users()
     
     if users:
         for user in users:
@@ -41,7 +34,7 @@ with tab1:
             
             with col3:
                 if st.button("Delete", key=f"delete_{user['id']}"):
-                    success, message = delete_system_user(user['id'], st.session_state.role)
+                    success, message = service.delete_system_user(user['id'], st.session_state.role)
                     if success:
                         st.success(message)
                         st.rerun()
@@ -55,7 +48,7 @@ with tab1:
 with tab2:
     st.subheader("System Roles")
     
-    roles = get_system_roles()
+    roles = service.list_system_roles()
     
     if roles:
         for role in roles:
@@ -75,7 +68,7 @@ with tab2:
 with tab3:
     st.subheader("System Permissions")
     
-    permissions = get_system_permissions()
+    permissions = service.list_system_permissions()
     
     if permissions:
         for perm in permissions:
@@ -97,7 +90,7 @@ with tab4:
             username = st.text_input("Username*", help="Login username (will be same as name by default)")
             email = st.text_input("Email*")
             
-            employees = get_all_employees()
+            employees = service.list_all_employees()
             
             employee_id = None
             if employees:
@@ -113,7 +106,7 @@ with tab4:
             else:
                 st.info("No employees found. You can still create a system user without linking to an employee.")
             
-            roles = get_system_roles()
+            roles = service.list_system_roles()
             if roles:
                 role_options = {role['name']: role['id'] for role in roles}
                 selected_role = st.selectbox("System Role*", options=list(role_options.keys()))
@@ -132,7 +125,7 @@ with tab4:
                 else:
                     final_username = username if username else name
                     
-                    success, message = add_system_user(
+                    success, message = service.add_system_user(
                         name=name,
                         username=final_username,
                         email=email,
@@ -161,7 +154,7 @@ with tab4:
                     if not perm_name:
                         st.error("Please provide a permission name")
                     else:
-                        success, message = add_system_permission(
+                        success, message = service.add_system_permission(
                             name=perm_name,
                             description=perm_desc,
                             current_user_role=st.session_state.role
@@ -179,7 +172,7 @@ with tab4:
                 
                 role_name = st.text_input("Role Name*")
                 
-                permissions = get_system_permissions()
+                permissions = service.list_system_permissions()
                 if permissions:
                     perm_options = {perm['name']: perm['id'] for perm in permissions}
                     perm_options["None"] = None
@@ -195,7 +188,7 @@ with tab4:
                     if not role_name:
                         st.error("Please provide a role name")
                     else:
-                        success, message = add_system_role(
+                        success, message = service.add_system_role(
                             name=role_name,
                             permission_id=perm_id,
                             current_user_role=st.session_state.role
