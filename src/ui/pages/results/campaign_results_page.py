@@ -1454,7 +1454,7 @@ else:
 
     # Load campaigns
     with db.session() as session:
-        campaigns = campaign_repo.list_campaigns()
+        campaigns = campaign_repo.list_campaigns(session)
         for c in campaigns:
             session.expunge(c)
     campaign_options = ["-- Select a campaign --"]

@@ -23,7 +23,7 @@ class SaveBatchResult:
 class CampaignService:
     def __init__(self):
         self.db = get_db()
-        self.campaigns = CampaignRepository(self.db.session)
+        self.campaigns = CampaignRepository()
         self.evals = EvaluationRepository()
         self.forms = FormRepository()
         self.groups = OrganisationGroupRepository()
@@ -34,7 +34,7 @@ class CampaignService:
     # --- Campaign CRUD ---
     def list_campaigns(self) -> List[Campaign]:
         with self.db.session() as session:
-            campaigns = self.campaigns.list_campaigns()
+            campaigns = self.campaigns.list_campaigns(session)
             # Detach objects from session so they can be used after session closes
             for c in campaigns:
                 session.expunge(c)
@@ -42,7 +42,7 @@ class CampaignService:
 
     def get_campaign(self, campaign_id: int) -> Optional[Campaign]:
         with self.db.session() as session:
-            campaign = self.campaigns.get_campaign(campaign_id)
+            campaign = self.campaigns.get_campaign(session, campaign_id)
             if campaign is not None:
                 session.expunge(campaign)
             return campaign
@@ -84,7 +84,8 @@ class CampaignService:
 
     def create_campaign(self, name: str, description: str, start_date: datetime,
                         end_date: Optional[datetime], comment: Optional[str]) -> int:
-        return self.campaigns.create_campaign(name, description, start_date, end_date, comment)
+        with self.db.transaction() as conn:
+            return self.campaigns.create_campaign(conn, name, description, start_date, end_date, comment)
 
     def update_campaign(self, campaign_id: int, name: str, description: str, start_date: datetime,
                         end_date: Optional[datetime], is_active: bool, comment: Optional[str]) -> None:
