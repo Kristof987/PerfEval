@@ -202,6 +202,7 @@ def _set_step_progress(
     completed_phase: int | None = None,
     current_phase: int | None = None,
     force_completed: bool = False,
+    scroll_to_top: bool = True,
 ) -> None:
     if campaign_id == "new" or campaign_id is None:
         return
@@ -235,8 +236,9 @@ def _set_step_progress(
         pills_key = f"stepper_pills_{phase_key}"
         if pills_key in st.session_state:
             del st.session_state[pills_key]
-        # Signal scroll-to-top after rerun
-        st.session_state["_stepper_scroll_to_top"] = True
+        # Signal scroll-to-top after rerun (optional)
+        if scroll_to_top:
+            st.session_state["_stepper_scroll_to_top"] = True
 
 
 def _invalidate_after_team_change(campaign_id) -> None:
@@ -248,7 +250,7 @@ def _invalidate_after_team_change(campaign_id) -> None:
     invalidated_by_id[phase_key] = True
     st.session_state.campaign_dashboard_teams_invalidated_by_id = invalidated_by_id
 
-    _set_step_progress(campaign_id, completed_phase=1, current_phase=1, force_completed=True)
+    _set_step_progress(campaign_id, completed_phase=1, current_phase=1, force_completed=True, scroll_to_top=False)
 
     # Clear role-form related UI/session caches so removed-group effects are visible immediately.
     keys_to_delete = []

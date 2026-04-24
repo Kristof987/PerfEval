@@ -83,96 +83,31 @@ def _active_badge() -> str:
     )
 
 
-def _status_badge(label: str) -> str:
-    if label == "ACTIVE":
-        return (
-            "<span style='background:#e6f1fb;color:#0c447c;padding:4px 12px;"
-            "border-radius:20px;font-size:12px;font-weight:500'>Active</span>"
-        )
-    if label == "PENDING RESULTS":
-        return (
-            "<span style='background:#ffedd5;color:#7c2d12;padding:4px 12px;"
-            "border-radius:20px;font-size:12px;font-weight:500'>Pending results</span>"
-        )
-    if label == "CLOSED":
-        return (
-            "<span style='background:#fee2e2;color:#991b1b;padding:4px 12px;"
-            "border-radius:20px;font-size:12px;font-weight:500'>Closed</span>"
-        )
-    return (
-        "<span style='background:#e2e8f0;color:#334155;padding:4px 12px;"
-        "border-radius:20px;font-size:12px;font-weight:500'>Inactive</span>"
-    )
-
-
-def _campaign_status_label(campaign) -> str:
-    today = date.today()
-    end_date = _to_date(_get(campaign, "end_date"))
-    is_active = bool(_get(campaign, "is_active", False))
-    comment = str(_get(campaign, "comment") or "")
-
-    if end_date and end_date < today:
-        return "CLOSED"
-    if "[PENDING_RESULTS]" in comment:
-        return "PENDING RESULTS"
-    if is_active:
-        return "ACTIVE"
-    return "INACTIVE"
-
-
 def _stepper(current: int, meta_right: str = "") -> None:
-    n = len(PHASES)
-    pct = int((current / max(n - 1, 1)) * 100)
+    pct = int((current / max(len(PHASES) - 1, 1)) * 100)
+    crumbs: list[str] = []
+    for i, label in enumerate(PHASE_SHORT):
+        if i < current:
+            crumbs.append(f'<span style="color:#1D9E75">{label}</span>')
+        elif i == current:
+            crumbs.append(f'<span style="color:#2a2a2a;font-weight:600">{label}</span>')
+        else:
+            crumbs.append(f'<span style="color:#aaa">{label}</span>')
 
-    css_rules = []
-    for i in range(max(0, current)):
-        css_rules.append(
-            f"div[role='radiogroup'] > button:nth-child({i + 1}) {{"
-            f"  background-color: #10B981 !important;"
-            f"  color: #fff !important;"
-            f"  border-color: #10B981 !important;"
-            f"}}"
-        )
-    css_rules.append(
-        f"div[role='radiogroup'] > button:nth-child({current + 1}) {{"
-        f"  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.88), 0 0 0 3px rgba(16, 185, 129, 0.35), 0 0 0 5px rgba(16, 185, 129, 0.16) !important;"
-        f"  border-color: #10B981 !important;"
-        f"  transform: translateY(-1px);"
-        f"}}"
-    )
-
-    st.markdown(f"<style>\n{chr(10).join(css_rules)}\n</style>", unsafe_allow_html=True)
-
-    head_left, head_right = st.columns([3, 2])
-    with head_left:
-        st.markdown(
-            f"<p style='margin:0;font-size:14px'>"
-            f"<span style='color:#10B981;font-weight:600'>Step {current + 1}</span>"
-            f" <span style='color:#aaa'>/ {n}</span>"
-            f" <span style='color:#aaa;margin:0 6px'>—</span>"
-            f" <span style='font-weight:500'>{PHASES[current]}</span></p>",
-            unsafe_allow_html=True,
-        )
-    with head_right:
-        if meta_right:
-            st.markdown(
-                f"<p style='margin:0;text-align:right;font-size:13px;color:#888'>{meta_right}</p>",
-                unsafe_allow_html=True,
-            )
-
-    st.pills(
-        "dashboard_campaign_step",
-        options=list(range(n)),
-        format_func=lambda i: PHASE_SHORT[i],
-        default=current,
-        label_visibility="collapsed",
-        key=f"dashboard_stepper_{current}",
-    )
-
+    breadcrumb = ' <span style="color:#ccc;margin:0 2px">›</span> '.join(crumbs)
+    meta = f'<span style="font-size:13px;color:#888;white-space:nowrap">{meta_right}</span>' if meta_right else ""
     st.markdown(
-        f"""<div style="height:4px;background:#e5e5e0;border-radius:2px;overflow:hidden;margin-top:-0.5rem;margin-bottom:0.35rem">
-            <div style="height:100%;width:{pct}%;border-radius:2px;background:linear-gradient(90deg,#10B981,#185FA5)"></div>
-        </div>""",
+        f"""
+        <div style="padding:10px 16px;background:#f8f8f6;border-radius:10px;border:1px solid #eee;margin-bottom:1rem;
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:13px;color:#333;gap:8px">
+                <div style="overflow-x:auto;white-space:nowrap">{breadcrumb}</div>{meta}
+            </div>
+            <div style="height:4px;background:#e5e5e0;border-radius:2px;overflow:hidden">
+                <div style="height:100%;width:{pct}%;border-radius:2px;background:linear-gradient(90deg,#1D9E75,#185FA5)"></div>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -298,17 +233,22 @@ try:
 except Exception:
     all_counts = {}
 
-active_items = [c for c in campaigns if _campaign_status_label(c) == "ACTIVE"]
-pending_items = [c for c in campaigns if _campaign_status_label(c) == "PENDING RESULTS"]
-closed_items = [c for c in campaigns if _campaign_status_label(c) == "CLOSED"]
-inactive_items = [c for c in campaigns if _campaign_status_label(c) == "INACTIVE"]
+active_items = [c for c in campaigns if bool(getattr(c, "is_active", False))]
+inactive_items = [c for c in campaigns if not bool(getattr(c, "is_active", False))]
 
+if active_items:
+    st.markdown(
+        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
+        "letter-spacing:.4px;margin-bottom:4px'>Active campaigns</p>",
+        unsafe_allow_html=True,
+    )
 
-def _render_campaign_list_item(campaign, status_label: str, section_key: str) -> None:
+for campaign in active_items:
     campaign_id = int(getattr(campaign, "id", 0) or 0)
     name = getattr(campaign, "name", "Untitled campaign")
     description = getattr(campaign, "description", None)
     comment = getattr(campaign, "comment", None)
+    start_date = getattr(campaign, "start_date", None)
     end_date = getattr(campaign, "end_date", None)
 
     counts = all_counts.get(campaign_id, {"completed": 0, "total": 0})
@@ -326,7 +266,7 @@ def _render_campaign_list_item(campaign, status_label: str, section_key: str) ->
             st.markdown(f"**{name}**")
             st.caption(f"{description or 'No description'} · {participants} participants")
         with top_right:
-            st.markdown(_status_badge(status_label), unsafe_allow_html=True)
+            st.markdown(_active_badge(), unsafe_allow_html=True)
 
         p1, p2 = st.columns([4, 2])
         with p1:
@@ -344,62 +284,39 @@ def _render_campaign_list_item(campaign, status_label: str, section_key: str) ->
         m3.metric("Not started", not_started)
         m4.metric("Step", _step_label_for_campaign(campaign))
 
-        if not_started > 0 and status_label in ("ACTIVE", "PENDING RESULTS"):
+        if not_started > 0:
             st.warning(f"**{not_started} employees** have not started yet.", icon="⚠️")
 
-        c_open, _ = st.columns([1, 1])
+        c_open, c_edit = st.columns([1, 1])
         with c_open:
-            btn_label = "Continue →" if status_label in ("ACTIVE", "PENDING RESULTS") else "Open →"
-            btn_type = "primary" if status_label in ("ACTIVE", "PENDING RESULTS") else "secondary"
-            if st.button(btn_label, type=btn_type, key=f"open_{section_key}_{campaign_id}"):
+            if st.button("Continue →", type="primary", key=f"open_active_{campaign_id}"):
                 st.session_state.campaign_dashboard_selected_id = campaign_id
                 st.switch_page("pages/campaign_stepper_page.py")
 
         if comment:
             st.caption(f"Comment: {comment}")
 
-if active_items:
-    st.markdown(
-        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Active campaigns</p>",
-        unsafe_allow_html=True,
-    )
-
-for campaign in active_items:
-    _render_campaign_list_item(campaign, "ACTIVE", "active")
-
-if pending_items:
-    st.write("")
-    st.markdown(
-        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Pending results</p>",
-        unsafe_allow_html=True,
-    )
-
-for campaign in pending_items:
-    _render_campaign_list_item(campaign, "PENDING RESULTS", "pending")
-
-if closed_items:
-    st.write("")
-    st.markdown(
-        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Closed campaigns</p>",
-        unsafe_allow_html=True,
-    )
-
-for campaign in closed_items:
-    _render_campaign_list_item(campaign, "CLOSED", "closed")
-
 if inactive_items:
     st.write("")
     st.markdown(
         "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Inactive campaigns</p>",
+        "letter-spacing:.4px;margin-bottom:4px'>Previous campaigns</p>",
         unsafe_allow_html=True,
     )
 
 for campaign in inactive_items:
-    _render_campaign_list_item(campaign, "INACTIVE", "inactive")
+    campaign_id = int(getattr(campaign, "id", 0) or 0)
+    name = getattr(campaign, "name", "Untitled campaign")
+    end_date = getattr(campaign, "end_date", None)
+    participants = int(all_counts.get(campaign_id, {"total": 0}).get("total", 0) or 0)
+
+    with st.container(border=True):
+        r1, r2 = st.columns([5, 1])
+        with r1:
+            st.subheader(name)
+            st.caption(f"Closed: {_fmt_dt(end_date)} · {participants} participants")
+        with r2:
+            st.button("View", key=f"open_prev_{campaign_id}")
 
 st.markdown("")
 if st.button("+ Create new campaign", key="new_campaign_placeholder"):
