@@ -12,6 +12,13 @@ class RoleFormDefaultsRepository:
             """, (campaign_id,))
             return {(r[0], r[1]): r[2] for r in cur.fetchall()}
 
+    def clear_defaults(self, conn, campaign_id: int) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM campaign_role_form_defaults WHERE campaign_id = %s",
+                (campaign_id,),
+            )
+
     def upsert_defaults(self, conn, campaign_id: int, role_form_map: Dict[Tuple[str, str], int]) -> None:
         if not role_form_map:
             return

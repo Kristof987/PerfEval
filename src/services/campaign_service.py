@@ -100,6 +100,10 @@ class CampaignService:
         with self.db.transaction() as conn:
             self.campaigns.toggle_active(conn, campaign_id)
 
+    def close_filling_period(self, campaign_id: int) -> None:
+        with self.db.transaction() as conn:
+            self.campaigns.close_filling_period(conn, campaign_id)
+
     # --- Supporting data ---
     def list_forms(self) -> List[Dict[str, Any]]:
         with self.db.connection() as conn:
@@ -123,7 +127,36 @@ class CampaignService:
 
     def remove_group_from_campaign(self, campaign_id: int, group_id: int) -> None:
         with self.db.transaction() as conn:
+            # Delete matrix assignments for this campaign/group first.
+            self.evals.delete_group_evaluations(conn, campaign_id, group_id)
             self.groups.remove_from_campaign(conn, campaign_id, group_id)
+
+            # Rebuild role-form defaults to keep only roles still present in campaign groups.
+            campaign_groups = self.groups.list_campaign_groups(conn, campaign_id)
+            group_ids = [int(g["id"]) for g in campaign_groups if g.get("id") is not None]
+
+            employee_ids: set[int] = set()
+            for gid in group_ids:
+                for member in self.groups.list_group_members(conn, gid):
+                    employee_id = member.get("id")
+                    if employee_id is not None:
+                        employee_ids.add(int(employee_id))
+
+            valid_roles: set[str] = set()
+            if employee_ids:
+                roles_map = self.employees.get_roles_map(conn, list(employee_ids))
+                valid_roles = {role for role in roles_map.values() if role}
+
+            existing_defaults = self.role_forms.get_defaults(conn, campaign_id)
+            filtered_defaults = {
+                (evr, eer): form_id
+                for (evr, eer), form_id in existing_defaults.items()
+                if evr in valid_roles and eer in valid_roles
+            }
+
+            self.role_forms.clear_defaults(conn, campaign_id)
+            if filtered_defaults:
+                self.role_forms.upsert_defaults(conn, campaign_id, filtered_defaults)
 
     def list_group_members(self, group_id: int) -> List[Dict[str, Any]]:
         with self.db.connection() as conn:

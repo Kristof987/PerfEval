@@ -2121,13 +2121,23 @@ else:
             f3, f4 = st.columns([3.0, 1.0])
             with f3:
                 max_completed = int(participants_df["completed_evaluations"].max()) if participant_count else 0
-                min_completed = st.slider(
-                    "Minimum completed evaluations",
-                    min_value=0,
-                    max_value=max_completed if max_completed > 0 else 0,
-                    value=0,
-                    key="cr_filter_min_completed",
-                )
+                if max_completed <= 0:
+                    min_completed = st.slider(
+                        "Minimum completed evaluations",
+                        min_value=0,
+                        max_value=1,
+                        value=0,
+                        key="cr_filter_min_completed",
+                        disabled=True,
+                    )
+                else:
+                    min_completed = st.slider(
+                        "Minimum completed evaluations",
+                        min_value=0,
+                        max_value=max_completed,
+                        value=0,
+                        key="cr_filter_min_completed",
+                    )
             with f4:
                 st.write("")
                 reset = st.button("Reset filters", key="cr_reset_filters", use_container_width=True)

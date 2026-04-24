@@ -44,9 +44,23 @@ def _flash_success_and_rerun(message: str, hide_add_employee_modal: bool = False
         st.session_state.show_add_employee = False
     st.rerun()
 
-sub_tab1, sub_tab2 = st.tabs(["Groups", "Employees"])
+_org_mode = st.session_state.pop("org_info_mode", "all")
+_show_groups = _org_mode in ("all", "groups")
+_show_employees = _org_mode in ("all", "employees")
 
-with sub_tab1:
+if _org_mode == "all":
+    sub_tab1, sub_tab2 = st.tabs(["Groups", "Employees"])
+    _groups_container = sub_tab1
+    _employees_container = sub_tab2
+elif _org_mode == "groups":
+    _groups_container = st.container()
+    _employees_container = None
+else:
+    _groups_container = None
+    _employees_container = st.container()
+
+if _show_groups and _groups_container is not None:
+  with _groups_container:
     st.subheader("Manage Groups")
 
     with st.expander("➕ Create New Group", expanded=False):
@@ -226,7 +240,8 @@ def add_employee_modal():
         st.rerun()
 
 
-with sub_tab2:
+if _show_employees and _employees_container is not None:
+  with _employees_container:
     st.subheader("Manage Employees")
 
     if "show_add_employee" not in st.session_state:

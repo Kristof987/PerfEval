@@ -14,3 +14,4 @@ matplotlib
 google-genai
 sqlalchemy
 streamlit-extras
+streamlit_antd_components

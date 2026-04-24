@@ -45,4 +45,34 @@ class CampaignRepository:
 
     def toggle_active(self, conn, campaign_id: int) -> None:
         with conn.cursor() as cur:
-            cur.execute("UPDATE campaign SET is_active = NOT is_active WHERE id=%s", (campaign_id,))
+            cur.execute(
+                """
+                UPDATE campaign
+                SET
+                    is_active = NOT is_active,
+                    comment = CASE
+                        WHEN is_active = FALSE
+                            THEN NULLIF(TRIM(BOTH ' ' FROM REPLACE(COALESCE(comment, ''), '[PENDING_RESULTS]', '')), '')
+                        ELSE comment
+                    END
+                WHERE id=%s
+                """,
+                (campaign_id,),
+            )
+
+    def close_filling_period(self, conn, campaign_id: int) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE campaign
+                SET
+                    is_active = FALSE,
+                    comment = CASE
+                        WHEN POSITION('[PENDING_RESULTS]' IN COALESCE(comment, '')) > 0 THEN comment
+                        WHEN comment IS NULL OR BTRIM(comment) = '' THEN '[PENDING_RESULTS]'
+                        ELSE comment || ' [PENDING_RESULTS]'
+                    END
+                WHERE id=%s
+                """,
+                (campaign_id,),
+            )

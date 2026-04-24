@@ -79,7 +79,6 @@ employee_3 = st.Page(
     "ui/pages/employee/forms_page.py",
     title="Assigned Forms",
     icon=":material/assignment:",
-    default=True,
 )
 admin_1 = st.Page(
     "ui/pages/admin/user_management_page.py",
@@ -87,10 +86,23 @@ admin_1 = st.Page(
     icon=":material/person_add:"
 )
 
+hr_campaign_dashboard = st.Page(
+    "ui/pages/campaigns/campaign_dashboard_page.py",
+    title="Campaign Dashboard",
+    icon=":material/home:",
+    default=True,
+)
+
 hr_campaigns = st.Page(
     "ui/pages/campaigns/campaign_page.py",
     title="Campaigns",
     icon=":material/campaign:"
+)
+
+hr_campaign_stepper = st.Page(
+    "pages/campaign_stepper_page.py",
+    title="Campaign Flow",
+    icon=":material/tactic:",
 )
 
 hr_survey_builder = st.Page(
@@ -103,6 +115,18 @@ hr_org_page = st.Page(
     "ui/pages/organisation/org_info_page.py",
     title="Organisation Information",
     icon=":material/badge:"
+)
+
+employee_management_page = st.Page(
+    "ui/pages/organisation/employee_management_page.py",
+    title="Employee Management",
+    icon=":material/badge:"
+)
+
+group_management_page = st.Page(
+    "ui/pages/organisation/group_management_page.py",
+    title="Group Management",
+    icon=":material/groups:"
 )
 
 # hr_dashboard_page = st.Page(
@@ -125,16 +149,17 @@ hr_campaign_results = st.Page(
 
 account_pages = [logout_page, settings, manage_groups]
 welcome_pages = [employee_3]
-admin_pages = [admin_1]
-hr_pages = [hr_campaigns, hr_survey_builder]
-org_pages = [hr_org_page]
-dashboard_pages = [hr_campaign_results]
+people_org_pages = [employee_management_page, group_management_page, admin_1]
+# Legacy pages are intentionally kept in code but hidden from sidebar navigation:
+# - ui/pages/campaigns/campaign_page.py
+# - ui/pages/results/campaign_results_page.py
+hr_pages = [hr_campaign_stepper, hr_survey_builder]
+dashboard_pages = []
 
 account_pages = _dedupe_pages(account_pages)
 welcome_pages = _dedupe_pages(welcome_pages)
-admin_pages = _dedupe_pages(admin_pages)
+people_org_pages = _dedupe_pages(people_org_pages)
 hr_pages = _dedupe_pages(hr_pages)
-org_pages = _dedupe_pages(org_pages)
 dashboard_pages = _dedupe_pages(dashboard_pages)
 
 st.markdown("""
@@ -168,6 +193,24 @@ section.stMain .block-container {
 }
 </style>""", unsafe_allow_html=True)
 
+st.markdown(
+    """
+    <style>
+    /* Keep Campaign Flow routable (for st.switch_page), but hide it from sidebar nav */
+    [data-testid="stSidebarNav"] a[href$="/pages/campaign_stepper_page"] {
+        display: none !important;
+    }
+    [data-testid="stSidebarNav"] a[href$="/pages/campaign_stepper_page.py"] {
+        display: none !important;
+    }
+    [data-testid="stSidebarNav"] a[href*="campaign_stepper_page"] {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 title_col, profile_col = st.columns([0.92, 0.08], vertical_alignment="center")
 
 with title_col:
@@ -182,17 +225,26 @@ page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
     page_dict["General"] = welcome_pages
 if st.session_state.role == "Admin":
-    page_dict["Organisation"] = org_pages
-    page_dict["Admin"] = admin_pages
-    page_dict["Results"] = dashboard_pages
-if st.session_state.role == "HR employee":
-    page_dict["Organisation"] = org_pages
-    page_dict["Admin"] = admin_pages
+    page_dict[" "] = [hr_campaign_dashboard]
+    page_dict["People & Organisation"] = people_org_pages
     page_dict["HR"] = hr_pages
-    page_dict["Results"] = dashboard_pages
+    if dashboard_pages:
+        page_dict["Results"] = dashboard_pages
+if st.session_state.role == "HR employee":
+    page_dict[" "] = [hr_campaign_dashboard]
+    page_dict["People & Organisation"] = people_org_pages
+    page_dict["HR"] = hr_pages
+    if dashboard_pages:
+        page_dict["Results"] = dashboard_pages
 
 if len(page_dict) > 0:
-    pg = st.navigation({"Account": account_pages} | page_dict)
+    nav_cfg = {"Account": account_pages} | page_dict
+    if " " in page_dict:
+        # Ensure Campaign Dashboard section is rendered above Account.
+        nav_cfg = {" ": page_dict[" "]} | {"Account": account_pages} | {
+            k: v for k, v in page_dict.items() if k != " "
+        }
+    pg = st.navigation(nav_cfg)
 else:
     pg = st.navigation([st.Page(login)])
 

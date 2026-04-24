@@ -195,6 +195,8 @@ def _campaign_status_meta(campaign, completed: int, total: int):
     today = date.today()
     end_date = _to_date(_get(campaign, "end_date"))
     is_active = bool(_get(campaign, "is_active"))
+    comment = str(_get(campaign, "comment") or "")
+    is_pending_results = "[PENDING_RESULTS]" in comment
     completion_pct = (completed / total * 100) if total > 0 else 0
 
     if end_date and end_date < today:
@@ -203,6 +205,15 @@ def _campaign_status_meta(campaign, completed: int, total: int):
             "fg": "#991b1b",
             "bg": "#fee2e2",
             "rank": 4,
+            "completion_pct": completion_pct,
+        }
+
+    if is_pending_results:
+        return {
+            "label": "PENDING RESULTS",
+            "fg": "#7c2d12",
+            "bg": "#ffedd5",
+            "rank": 2,
             "completion_pct": completion_pct,
         }
 
@@ -1042,17 +1053,21 @@ else:
 
             with st.expander("Advanced filters", expanded=False):
                 st.caption("Open and tick only the statuses you want to see.")
-                s1, s2, s3 = st.columns(3)
+                s1, s2, s3, s4 = st.columns(4)
                 with s1:
                     status_active = st.checkbox("ACTIVE", value=True, key="campaign_filter_status_active")
                 with s2:
-                    status_inactive = st.checkbox("INACTIVE", value=True, key="campaign_filter_status_inactive")
+                    status_pending_results = st.checkbox("PENDING RESULTS", value=True, key="campaign_filter_status_pending_results")
                 with s3:
+                    status_inactive = st.checkbox("INACTIVE", value=True, key="campaign_filter_status_inactive")
+                with s4:
                     status_closed = st.checkbox("CLOSED", value=True, key="campaign_filter_status_closed")
 
                 selected_statuses = []
                 if status_active:
                     selected_statuses.append("ACTIVE")
+                if status_pending_results:
+                    selected_statuses.append("PENDING RESULTS")
                 if status_inactive:
                     selected_statuses.append("INACTIVE")
                 if status_closed:
@@ -1092,6 +1107,7 @@ else:
             selected_statuses = [
                 status for status, enabled in [
                     ("ACTIVE", st.session_state.get("campaign_filter_status_active", True)),
+                    ("PENDING RESULTS", st.session_state.get("campaign_filter_status_pending_results", True)),
                     ("INACTIVE", st.session_state.get("campaign_filter_status_inactive", True)),
                     ("CLOSED", st.session_state.get("campaign_filter_status_closed", True)),
                 ]
