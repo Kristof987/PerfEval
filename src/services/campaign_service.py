@@ -104,6 +104,10 @@ class CampaignService:
         with self.db.transaction() as conn:
             self.campaigns.close_filling_period(conn, campaign_id)
 
+    def close_campaign(self, campaign_id: int) -> None:
+        with self.db.transaction() as conn:
+            self.campaigns.close_campaign(conn, campaign_id)
+
     # --- Supporting data ---
     def list_forms(self) -> List[Dict[str, Any]]:
         with self.db.connection() as conn:

@@ -113,7 +113,7 @@ hr_survey_builder = st.Page(
 
 hr_org_page = st.Page(
     "ui/pages/organisation/org_info_page.py",
-    title="Organisation Information",
+    title="Manage Employees and Groups",
     icon=":material/badge:"
 )
 

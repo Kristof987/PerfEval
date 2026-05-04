@@ -233,90 +233,109 @@ try:
 except Exception:
     all_counts = {}
 
-active_items = [c for c in campaigns if bool(getattr(c, "is_active", False))]
-inactive_items = [c for c in campaigns if not bool(getattr(c, "is_active", False))]
+def _campaign_status_meta(campaign, completed: int, total: int) -> dict:
+    today = date.today()
+    end_date = _to_date(_get(campaign, "end_date"))
+    is_active = bool(_get(campaign, "is_active", False))
+    comment = str(_get(campaign, "comment") or "")
+    is_pending_results = "[PENDING_RESULTS]" in comment
+    is_closed_marked = "[CLOSED]" in comment
+    completion_pct = (completed / total * 100) if total > 0 else 0
 
-if active_items:
-    st.markdown(
-        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Active campaigns</p>",
-        unsafe_allow_html=True,
+    if is_closed_marked and not is_active:
+        return {"label": "CLOSED", "fg": "#991b1b", "bg": "#fee2e2", "section": "CLOSED"}
+    if ((end_date is not None and end_date < today) or completion_pct >= 100) and not is_active:
+        return {"label": "CLOSED", "fg": "#991b1b", "bg": "#fee2e2", "section": "CLOSED"}
+    if is_pending_results:
+        return {"label": "PENDING RESULTS", "fg": "#7c2d12", "bg": "#ffedd5", "section": "PENDING RESULTS"}
+    if is_active:
+        return {"label": "ACTIVE", "fg": "#065f46", "bg": "#dcfce7", "section": "ACTIVE"}
+    return {"label": "INACTIVE", "fg": "#334155", "bg": "#e2e8f0", "section": "INACTIVE"}
+
+
+def _status_badge_html(label: str, fg: str, bg: str) -> str:
+    return (
+        f"<span style='background:{bg};color:{fg};padding:4px 12px;"
+        f"border-radius:20px;font-size:12px;font-weight:600'>{label}</span>"
     )
 
-for campaign in active_items:
-    campaign_id = int(getattr(campaign, "id", 0) or 0)
-    name = getattr(campaign, "name", "Untitled campaign")
-    description = getattr(campaign, "description", None)
-    comment = getattr(campaign, "comment", None)
-    start_date = getattr(campaign, "start_date", None)
-    end_date = getattr(campaign, "end_date", None)
 
+rows = []
+for campaign in campaigns:
+    campaign_id = int(getattr(campaign, "id", 0) or 0)
     counts = all_counts.get(campaign_id, {"completed": 0, "total": 0})
     done = int(counts.get("completed", 0) or 0)
     participants = int(counts.get("total", 0) or 0)
-    not_started = max(participants - done, 0)
-    wip = 0
-    pct = int((done / participants) * 100) if participants > 0 else 0
-    deadline_text = _fmt_dt(end_date)
-    days_left = _days_left(end_date)
+    meta = _campaign_status_meta(campaign, done, participants)
+    rows.append((campaign, meta))
 
-    with st.container(border=True):
-        top_left, top_right = st.columns([5, 1])
-        with top_left:
-            st.markdown(f"**{name}**")
-            st.caption(f"{description or 'No description'} · {participants} participants")
-        with top_right:
-            st.markdown(_active_badge(), unsafe_allow_html=True)
+sections = [
+    ("ACTIVE", "Active campaigns"),
+    ("PENDING RESULTS", "Pending results"),
+    ("INACTIVE", "Inactive campaigns"),
+    ("CLOSED", "Closed campaigns"),
+]
 
-        p1, p2 = st.columns([4, 2])
-        with p1:
-            st.caption(f"**Evaluation in progress** — {pct}% complete")
-            st.progress(pct / 100)
-        with p2:
-            if days_left is None:
-                st.caption(f"Deadline: {deadline_text}")
-            else:
-                st.caption(f"Deadline: {deadline_text} ({days_left} days)")
+for section_key, section_title in sections:
+    section_items = [(c, m) for c, m in rows if m["section"] == section_key]
+    if not section_items:
+        continue
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Completed", done)
-        m2.metric("In progress", wip)
-        m3.metric("Not started", not_started)
-        m4.metric("Step", _step_label_for_campaign(campaign))
-
-        if not_started > 0:
-            st.warning(f"**{not_started} employees** have not started yet.", icon="⚠️")
-
-        c_open, c_edit = st.columns([1, 1])
-        with c_open:
-            if st.button("Continue →", type="primary", key=f"open_active_{campaign_id}"):
-                st.session_state.campaign_dashboard_selected_id = campaign_id
-                st.switch_page("pages/campaign_stepper_page.py")
-
-        if comment:
-            st.caption(f"Comment: {comment}")
-
-if inactive_items:
-    st.write("")
     st.markdown(
-        "<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
-        "letter-spacing:.4px;margin-bottom:4px'>Previous campaigns</p>",
+        f"<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
+        f"letter-spacing:.4px;margin-bottom:4px'>{section_title}</p>",
         unsafe_allow_html=True,
     )
 
-for campaign in inactive_items:
-    campaign_id = int(getattr(campaign, "id", 0) or 0)
-    name = getattr(campaign, "name", "Untitled campaign")
-    end_date = getattr(campaign, "end_date", None)
-    participants = int(all_counts.get(campaign_id, {"total": 0}).get("total", 0) or 0)
+    for campaign, status_meta in section_items:
+        campaign_id = int(getattr(campaign, "id", 0) or 0)
+        name = getattr(campaign, "name", "Untitled campaign")
+        description = getattr(campaign, "description", None)
+        comment = getattr(campaign, "comment", None)
+        end_date = getattr(campaign, "end_date", None)
 
-    with st.container(border=True):
-        r1, r2 = st.columns([5, 1])
-        with r1:
-            st.subheader(name)
-            st.caption(f"Closed: {_fmt_dt(end_date)} · {participants} participants")
-        with r2:
-            st.button("View", key=f"open_prev_{campaign_id}")
+        counts = all_counts.get(campaign_id, {"completed": 0, "total": 0})
+        done = int(counts.get("completed", 0) or 0)
+        participants = int(counts.get("total", 0) or 0)
+        not_started = max(participants - done, 0)
+        wip = 0
+        pct = int((done / participants) * 100) if participants > 0 else 0
+        deadline_text = _fmt_dt(end_date)
+        days_left = _days_left(end_date)
+
+        with st.container(border=True):
+            top_left, top_right = st.columns([5, 1])
+            with top_left:
+                st.markdown(f"**{name}**")
+                st.caption(f"{description or 'No description'} · {participants} participants")
+            with top_right:
+                st.markdown(
+                    _status_badge_html(status_meta["label"], status_meta["fg"], status_meta["bg"]),
+                    unsafe_allow_html=True,
+                )
+
+            p1, p2 = st.columns([4, 2])
+            with p1:
+                st.caption(f"**Progress** — {pct}% complete")
+                st.progress(pct / 100)
+            with p2:
+                if days_left is None:
+                    st.caption(f"Deadline: {deadline_text}")
+                else:
+                    st.caption(f"Deadline: {deadline_text} ({days_left} days)")
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Completed", done)
+            m2.metric("In progress", wip)
+            m3.metric("Not started", not_started)
+            m4.metric("Step", _step_label_for_campaign(campaign))
+
+            c_open, _ = st.columns([1, 1])
+            with c_open:
+                action_label = "Continue →" if status_meta["label"] in ("ACTIVE", "PENDING RESULTS") else "Open →"
+                if st.button(action_label, type="primary", key=f"open_{status_meta['section']}_{campaign_id}"):
+                    st.session_state.campaign_dashboard_selected_id = campaign_id
+                    st.switch_page("pages/campaign_stepper_page.py")
 
 st.markdown("")
 if st.button("+ Create new campaign", key="new_campaign_placeholder"):

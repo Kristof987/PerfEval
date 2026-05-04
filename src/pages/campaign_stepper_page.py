@@ -346,6 +346,8 @@ def _infer_completed_phase(campaign_obj) -> int:
         has_role_defaults = any(v is not None for v in role_defaults.values()) if role_defaults else False
 
         has_closed_campaign = not bool(_get(campaign_obj, "is_active", True))
+        comment = str(_get(campaign_obj, "comment") or "")
+        is_closed_marked = "[CLOSED]" in comment
 
         completed_phase = 0
         if has_groups:
@@ -356,6 +358,8 @@ def _infer_completed_phase(campaign_obj) -> int:
             completed_phase = 3
         if has_any_completion:
             completed_phase = 4
+        if has_closed_campaign and is_closed_marked:
+            completed_phase = 6
 
         invalidated_by_id = st.session_state.get("campaign_dashboard_teams_invalidated_by_id", {})
         if bool(invalidated_by_id.get(str(campaign_id), False)):
@@ -475,7 +479,7 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
 
     elif phase_index == 1:
         st.subheader("Groups")
-        st.caption("Group assignment and team creation only")
+        st.caption("Group assignment and team creation")
 
         if selected_id == "new":
             st.warning("Create the campaign first, then you can assign/create teams.")
@@ -490,8 +494,8 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
 
         c1, c2 = st.columns([1, 1])
         with c1:
-            if st.button("Create / manage teams", use_container_width=True, key="stepper_open_team_create"):
-                st.switch_page("ui/pages/groups/my_groups_page.py")
+            if st.button("Create / manage groups", use_container_width=True, key="stepper_open_team_create"):
+                st.switch_page("ui/pages/organisation/org_info_page.py")
         with c2:
             if st.button("Continue to Forms", type="primary", use_container_width=True, key="stepper_teams_continue"):
                 _set_step_progress(selected_id, completed_phase=1, current_phase=2)
@@ -588,8 +592,6 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
                     merged_map[pair] = form_id
 
         st.session_state[map_key] = merged_map
-
-        st.caption("Self-assessment default is '{role} self-assessment' when available.")
         st.write("---")
 
         relationship_rows = []
@@ -637,8 +639,7 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
                 st.rerun()
 
     elif phase_index == 3:
-        st.subheader("Matrix")
-        st.caption("Evaluation matrix only")
+        st.subheader("Evaluation matrix")
 
         if selected_id == "new":
             st.warning("Create the campaign first, then configure the matrix.")
@@ -950,7 +951,41 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
 
     else:
         st.subheader("Closure")
-        st.info("This step is not part of the requested custom routing.")
+        if selected_id == "new":
+            st.warning("Create the campaign first, then close it when the flow is finished.")
+            return
+
+        svc = CampaignService()
+        campaign_id = int(selected_id)
+        campaign = svc.get_campaign(campaign_id)
+        if campaign is None:
+            st.error("Campaign data is not available.")
+            return
+
+        comment = str(_get(campaign, "comment") or "")
+        is_closed = (not bool(_get(campaign, "is_active", True))) and ("[CLOSED]" in comment)
+
+        st.caption("Finalize the campaign and lock it as closed.")
+
+        if is_closed:
+            _set_step_progress(selected_id, completed_phase=6, current_phase=6, force_completed=True)
+            st.success("Campaign is already closed.")
+            return
+
+        if st.button("Close Campaign", type="primary", key=f"stepper_close_campaign_{campaign_id}"):
+            try:
+                close_campaign_fn = getattr(svc, "close_campaign", None)
+                if callable(close_campaign_fn):
+                    close_campaign_fn(campaign_id)
+                else:
+                    with svc.db.transaction() as conn:
+                        svc.campaigns.close_campaign(conn, campaign_id)
+
+                _set_step_progress(selected_id, completed_phase=6, current_phase=6, force_completed=True)
+                st.success("Campaign closed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"{ICONS['error']} Could not close campaign: {exc}")
 
 
 # ──────────────────────────────────────────────
