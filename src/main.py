@@ -94,15 +94,9 @@ hr_campaign_dashboard = st.Page(
 )
 
 hr_campaign_stepper = st.Page(
-    "pages/campaign_stepper_page.py",
+    "ui/pages/campaigns/campaign_stepper_page.py",
     title="Campaign Flow",
     icon=":material/tactic:",
-)
-
-hr_campaigns = st.Page(
-    "ui/pages/campaigns/campaign_page.py",
-    title="Campaigns",
-    icon=":material/campaign:"
 )
 
 hr_survey_builder = st.Page(

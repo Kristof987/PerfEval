@@ -6,32 +6,12 @@ import streamlit as st
 
 from consts.consts import ICONS
 from services.campaign_service import CampaignService
-
-
-PHASES = [
-    "Campaign creation",
-    "Team selection",
-    "Form assignments",
-    "Evaluation matrix",
-    "Evaluate",
-    "Results",
-    "Closure",
-]
-
-PHASE_SHORT = [
-    "Campaign Setup",
-    "Groups",
-    "Forms",
-    "Assignment Matrix",
-    "Evaluate",
-    "Results",
-    "Close",
-]
+from ui.pages.campaigns.common.consts import PHASES
+from ui.pages.campaigns.helpers.helpers import datetime_to_string, to_date, count_days_left
 
 
 def _icon(key: str, fallback: str = "") -> str:
     return ICONS.get(key, fallback)
-
 
 def _get(obj, key, default=None):
     if obj is None:
@@ -40,77 +20,11 @@ def _get(obj, key, default=None):
         return obj.get(key, default)
     return getattr(obj, key, default)
 
-
-def _fmt_dt(value) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d")
-    if isinstance(value, date):
-        return value.strftime("%Y-%m-%d")
-    return str(value)
-
-
-def _to_date(value) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text).date()
-        except Exception:
-            return None
-    return None
-
-
-def _days_left(end_value) -> int | None:
-    end_date = _to_date(end_value)
-    if not end_date:
-        return None
-    return (end_date - date.today()).days
-
-
 def _active_badge() -> str:
     return (
         "<span style='background:#e6f1fb;color:#0c447c;padding:4px 12px;"
         "border-radius:20px;font-size:12px;font-weight:500'>Active</span>"
     )
-
-
-def _stepper(current: int, meta_right: str = "") -> None:
-    pct = int((current / max(len(PHASES) - 1, 1)) * 100)
-    crumbs: list[str] = []
-    for i, label in enumerate(PHASE_SHORT):
-        if i < current:
-            crumbs.append(f'<span style="color:#1D9E75">{label}</span>')
-        elif i == current:
-            crumbs.append(f'<span style="color:#2a2a2a;font-weight:600">{label}</span>')
-        else:
-            crumbs.append(f'<span style="color:#aaa">{label}</span>')
-
-    breadcrumb = ' <span style="color:#ccc;margin:0 2px">›</span> '.join(crumbs)
-    meta = f'<span style="font-size:13px;color:#888;white-space:nowrap">{meta_right}</span>' if meta_right else ""
-    st.markdown(
-        f"""
-        <div style="padding:10px 16px;background:#f8f8f6;border-radius:10px;border:1px solid #eee;margin-bottom:1rem;
-            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:13px;color:#333;gap:8px">
-                <div style="overflow-x:auto;white-space:nowrap">{breadcrumb}</div>{meta}
-            </div>
-            <div style="height:4px;background:#e5e5e0;border-radius:2px;overflow:hidden">
-                <div style="height:100%;width:{pct}%;border-radius:2px;background:linear-gradient(90deg,#1D9E75,#185FA5)"></div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
 
 st.set_page_config(layout="wide")
 st.markdown(
@@ -235,7 +149,7 @@ except Exception:
 
 def _campaign_status_meta(campaign, completed: int, total: int) -> dict:
     today = date.today()
-    end_date = _to_date(_get(campaign, "end_date"))
+    end_date = to_date(_get(campaign, "end_date"))
     is_active = bool(_get(campaign, "is_active", False))
     comment = str(_get(campaign, "comment") or "")
     is_pending_results = "[PENDING_RESULTS]" in comment
@@ -281,6 +195,8 @@ for section_key, section_title in sections:
     if not section_items:
         continue
 
+    is_large_section = section_key in ("ACTIVE", "PENDING RESULTS")
+
     st.markdown(
         f"<p style='font-size:12px;font-weight:500;color:#888;text-transform:uppercase;"
         f"letter-spacing:.4px;margin-bottom:4px'>{section_title}</p>",
@@ -300,45 +216,51 @@ for section_key, section_title in sections:
         not_started = max(participants - done, 0)
         wip = 0
         pct = int((done / participants) * 100) if participants > 0 else 0
-        deadline_text = _fmt_dt(end_date)
-        days_left = _days_left(end_date)
+        deadline_text = datetime_to_string(end_date)
+        days_left = count_days_left(end_date)
 
         with st.container(border=True):
             top_left, top_right = st.columns([5, 1])
             with top_left:
                 st.markdown(f"**{name}**")
-                st.caption(f"{description or 'No description'} · {participants} participants")
+                if is_large_section:
+                    st.caption(f"{description or 'No description'} · {participants} participants")
+                else:
+                    st.caption(f"{participants} participants")
             with top_right:
                 st.markdown(
                     _status_badge_html(status_meta["label"], status_meta["fg"], status_meta["bg"]),
                     unsafe_allow_html=True,
                 )
 
-            p1, p2 = st.columns([4, 2])
-            with p1:
-                st.caption(f"**Progress** — {pct}% complete")
-                st.progress(pct / 100)
-            with p2:
-                if days_left is None:
-                    st.caption(f"Deadline: {deadline_text}")
-                else:
-                    st.caption(f"Deadline: {deadline_text} ({days_left} days)")
+            if is_large_section:
+                p1, p2 = st.columns([4, 2])
+                with p1:
+                    st.caption(f"**Progress** — {pct}% complete")
+                    st.progress(pct / 100)
+                with p2:
+                    if days_left is None:
+                        st.caption(f"Deadline: {deadline_text}")
+                    else:
+                        st.caption(f"Deadline: {deadline_text} ({days_left} days)")
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Completed", done)
-            m2.metric("In progress", wip)
-            m3.metric("Not started", not_started)
-            m4.metric("Step", _step_label_for_campaign(campaign))
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Completed", done)
+                m2.metric("In progress", wip)
+                m3.metric("Not started", not_started)
+                m4.metric("Step", _step_label_for_campaign(campaign))
+            else:
+                st.caption(f"Progress: {pct}% · Step: {_step_label_for_campaign(campaign)} · Deadline: {deadline_text}")
 
             c_open, _ = st.columns([1, 1])
             with c_open:
                 action_label = "Continue →" if status_meta["label"] in ("ACTIVE", "PENDING RESULTS") else "Open →"
                 if st.button(action_label, type="primary", key=f"open_{status_meta['section']}_{campaign_id}"):
                     st.session_state.campaign_dashboard_selected_id = campaign_id
-                    st.switch_page("pages/campaign_stepper_page.py")
+                    st.switch_page("ui/pages/campaigns/campaign_stepper_page.py")
 
 st.markdown("")
 if st.button("+ Create new campaign", key="new_campaign_placeholder"):
     st.session_state.campaign_dashboard_selected_id = "new"
-    st.switch_page("pages/campaign_stepper_page.py")
+    st.switch_page("ui/pages/campaigns/campaign_stepper_page.py")
 

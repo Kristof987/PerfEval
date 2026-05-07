@@ -234,18 +234,6 @@ def _go_back_to_campaign_results():
     st.rerun()
 
 
-def _render_cr_breadcrumb() -> None:
-    parts = ["Campaign Results"]
-    if st.session_state.cr_selected_campaign_name:
-        parts.append(st.session_state.cr_selected_campaign_name)
-    if st.session_state.cr_view == "overall":
-        parts.append("Overall")
-    elif st.session_state.cr_view == "employee" and st.session_state.cr_selected_employee_name:
-        parts.append(st.session_state.cr_selected_employee_name)
-
-    st.caption(" / ".join(parts))
-
-
 def _participants_df_for_campaign(conn, campaign_id: int) -> pd.DataFrame:
     cur = conn.cursor()
     cur.execute(
@@ -625,7 +613,6 @@ def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
 # EMPLOYEE RESULT VIEW
 # =========================================================
 if st.session_state.cr_view == "overall":
-    _render_cr_breadcrumb()
     st.title("Campaign Overall Results")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
     st.divider()
@@ -684,9 +671,6 @@ if st.session_state.cr_view == "overall":
         _go_back_to_campaign_results()
 
 elif st.session_state.cr_view == "employee":
-
-    _render_cr_breadcrumb()
-
     st.title(f"Employee Evaluation Results - {st.session_state.cr_selected_employee_name}")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
     st.divider()
@@ -1449,7 +1433,6 @@ elif st.session_state.cr_view == "employee":
 # CAMPAIGN RESULTS VIEW
 # =========================================================
 else:
-    _render_cr_breadcrumb()
     st.title("Campaign Results")
 
     # Load campaigns
