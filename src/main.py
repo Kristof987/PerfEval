@@ -158,10 +158,8 @@ section.stMain .block-container {
     height: 42px;
     border-radius: 999px;
     border: 1px solid #cbd5e1;
-    background-image: url("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop");
-    background-size: cover;
-    background-position: center;
-    color: transparent;
+    background: #ffffff;
+    color: #2563eb;
     padding: 0;
 }
 .st-key-top_profile_icon button:hover {
@@ -186,7 +184,7 @@ with title_col:
 
 with profile_col:
     if st.session_state.role is not None:
-        if st.button("profile", key="top_profile_icon", help="Settings"):
+        if st.button("⚙", key="top_profile_icon", help="Settings"):
             st.switch_page("ui/settings_page.py")
 
 page_dict = {}
