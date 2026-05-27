@@ -11,6 +11,7 @@ from ui.pages.campaigns.helpers.helpers import get
 
 def render_reviewers(selected_id):
     st.subheader("Evaluation matrix")
+    status_placeholder = st.empty()
 
     if selected_id == "new":
         st.warning("Create the campaign first, then configure the matrix.")
@@ -101,6 +102,28 @@ def render_reviewers(selected_id):
             if bool(edited_df.iloc[evaluatee_idx][evaluator_name]):
                     st.session_state[matrix_key].add((int(get(evaluator, "id", 0)), int(get(evaluatee, "id", 0))))
 
+    selected_pairs = len(st.session_state[matrix_key])
+    if selected_pairs > 0:
+        status_placeholder.markdown(
+            f"""
+            <div style='border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:10px;padding:10px 12px;margin:4px 0 10px 0;'>
+                <span style='font-size:14px;font-weight:600;'>✅ Matrix has assignments</span><br>
+                <span style='font-size:12px;color:#166534;'>{selected_pairs} evaluation pair(s) selected.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        status_placeholder.markdown(
+            """
+            <div style='border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;padding:10px 12px;margin:4px 0 10px 0;'>
+                <span style='font-size:14px;font-weight:600;'>❌ Matrix is empty</span><br>
+                <span style='font-size:12px;color:#7f1d1d;'>Select at least one evaluation pair before saving.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.write("---")
     st.write("**Quick Selection:**")
 
@@ -135,7 +158,13 @@ def render_reviewers(selected_id):
         st.session_state[percentage_key] = percentage
 
     with col4:
-        if st.button(f"{ICONS['dice']} Auto-Assign", type="primary", use_container_width=True, key=f"stepper_auto_{matrix_key}"):
+        if st.button(
+            f"{ICONS['dice']} Auto-Assign",
+            type="primary",
+            use_container_width=True,
+            key=f"stepper_auto_{matrix_key}",
+            help="Automatically creates evaluator→evaluatee pairs based on the selected number per employee. Distributes reviewer load as evenly as possible and avoids duplicate pairs.",
+        ):
             st.session_state[matrix_key] = set()
 
             ids = [int(get(m, "id", 0)) for m in members]
@@ -168,6 +197,7 @@ def render_reviewers(selected_id):
             f"{ICONS['select_all']} Add self-assessments",
             use_container_width=True,
             key=f"stepper_self_{matrix_key}",
+            help="Adds self-evaluation pairs for all team members by selecting each person on their own row/column intersection (employee evaluates themselves).",
         ):
             for member in members:
                 mid = int(get(member, "id", 0) or 0)
@@ -214,5 +244,5 @@ def render_reviewers(selected_id):
 
     with c_next:
         if st.button("Continue to Evaluate", use_container_width=True, key=f"stepper_matrix_continue_{campaign_id}"):
-            set_step_progress(selected_id, current_phase=4)
+            set_step_progress(selected_id, completed_phase=3, current_phase=4)
             st.rerun()

@@ -5,8 +5,6 @@ from psycopg2.pool import SimpleConnectionPool
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-# Import all ORM models so SQLAlchemy mapper relationships are fully configured
-# before any session.query() is called.
 import models.campaign  # noqa: F401
 import models.campaign_group  # noqa: F401
 import models.campaign_role_form_default  # noqa: F401

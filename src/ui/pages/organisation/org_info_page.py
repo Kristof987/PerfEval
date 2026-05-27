@@ -40,8 +40,6 @@ def _flash_success_and_rerun(message: str, hide_add_employee_modal: bool = False
         "message": message,
         "expires_at": time.time() + 3.5,
     }
-    if hide_add_employee_modal:
-        st.session_state.show_add_employee = False
     st.rerun()
 
 sub_tab1, sub_tab2 = st.tabs(["Groups", "Employees"])
@@ -240,13 +238,7 @@ with sub_tab2:
         "Manage employee records here. You can add new employees, review details, and maintain their group memberships."
     )
 
-    if "show_add_employee" not in st.session_state:
-        st.session_state.show_add_employee = False
-
     if st.button("➕ Add new employee"):
-        st.session_state.show_add_employee = True
-
-    if st.session_state.show_add_employee:
         add_employee_modal()
 
     st.divider()

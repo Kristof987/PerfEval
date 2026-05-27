@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import random
-import runpy
-
-import pandas as pd
 import streamlit as st
 
-from consts.consts import ICONS
 from services.campaign_service import CampaignService
-from ui.pages.campaigns.common.common import set_step_progress, cleanup_on_group_removal, invalidate_after_team_change
 from ui.pages.campaigns.common.consts import PHASES
 from ui.pages.campaigns.common.consts import PHASE_SHORT
+from ui.pages.campaigns.common.styles import append_background_and_colour_stepper_style, append_active_step_highlight
 from ui.pages.campaigns.helpers.helpers import datetime_to_string, count_days_left, date_to_datetime, get
+from ui.pages.campaigns.render_stepper_closure_content import render_closure
+from ui.pages.campaigns.render_stepper_evaluate_content import render_evaluation
 from ui.pages.campaigns.render_stepper_forms_content import render_forms
+from ui.pages.campaigns.render_stepper_results_content import render_results
 from ui.pages.campaigns.render_stepper_reviewers_content import render_reviewers
 from ui.pages.campaigns.render_stepper_setup_content import render_setup
 from ui.pages.campaigns.render_stepper_groups_content import render_groups
@@ -37,23 +35,8 @@ def _stepper(
     # ── CSS: kész lépések zöld háttere (+ opcionális jövőbeli lépés lock) ──
     css_rules = []
 
-    for i in range(max(0, completed_until + 1)):
-        css_rules.append(
-            f"div[role='radiogroup'] > button:nth-child({i + 1}) {{"
-            f"  background-color: #10B981 !important;"
-            f"  color: #fff !important;"
-            f"  border-color: #10B981 !important;"
-            f"}}"
-        )
-
-    # Active step highlight (the currently selected/clicked step).
-    css_rules.append(
-        f"div[role='radiogroup'] > button:nth-child({current + 1}) {{"
-        f"  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.88), 0 0 0 3px rgba(16, 185, 129, 0.35), 0 0 0 5px rgba(16, 185, 129, 0.16) !important;"
-        f"  border-color: #10B981 !important;"
-        f"  transform: translateY(-1px);"
-        f"}}"
-    )
+    append_background_and_colour_stepper_style(css_rules, completed_until)
+    append_active_step_highlight(css_rules, current)
 
     if lock_future_steps:
         disable_from = (max_enabled_step + 1) if max_enabled_step is not None else (current + 1)
@@ -208,154 +191,11 @@ def _render_phase_content(phase_index: int, selected_id, campaign_name: str, sel
     elif phase_index == 3:
         render_reviewers(selected_id)
     elif phase_index == 4:
-        st.subheader("Evaluate")
-        st.caption("Collect responses and continue when ready")
-
-        svc = CampaignService()
-        campaign_id = int(selected_id)
-        campaign = svc.get_campaign(campaign_id)
-        evaluations = svc.list_campaign_evaluations(campaign_id)
-
-        remaining_by_evaluator: dict[str, int] = {}
-        completed_by_evaluator: dict[str, int] = {}
-        assigned_by_evaluator: dict[str, int] = {}
-
-        for row in evaluations:
-            evaluator_name = str(get(row, "evaluator_name", "Unknown"))
-            status = str(get(row, "status", "")).lower()
-
-            assigned_by_evaluator[evaluator_name] = assigned_by_evaluator.get(evaluator_name, 0) + 1
-            if status == "completed":
-                completed_by_evaluator[evaluator_name] = completed_by_evaluator.get(evaluator_name, 0) + 1
-            else:
-                remaining_by_evaluator[evaluator_name] = remaining_by_evaluator.get(evaluator_name, 0) + 1
-
-        total_remaining = sum(remaining_by_evaluator.values())
-        total_assigned = sum(assigned_by_evaluator.values())
-        total_completed = sum(completed_by_evaluator.values())
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Remaining questionnaires", total_remaining)
-        m2.metric("Completed questionnaires", total_completed)
-        m3.metric("Assigned questionnaires", total_assigned)
-
-        if total_remaining == 0 and total_assigned > 0:
-            st.success("All questionnaires are completed.")
-        elif total_assigned == 0:
-            st.info("No questionnaires assigned yet.")
-        else:
-            st.warning(f"{total_remaining} questionnaires are still pending.")
-
-        if assigned_by_evaluator:
-            rows = []
-            for evaluator_name, assigned_count in assigned_by_evaluator.items():
-                completed_count = completed_by_evaluator.get(evaluator_name, 0)
-                remaining_count = assigned_count - completed_count
-                rows.append(
-                    {
-                        "Employee": evaluator_name,
-                        "Remaining": remaining_count,
-                        "Completed": completed_count,
-                        "Assigned": assigned_count,
-                    }
-                )
-
-            rows = sorted(rows, key=lambda r: (-r["Remaining"], r["Employee"]))
-            st.write("**Remaining questionnaires by employee**")
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-        if campaign and bool(get(campaign, "is_active", True)):
-            if st.button("Close Form Filling", type="primary", key="stepper_close_filling"):
-                try:
-                    close_fn = getattr(svc, "close_filling_period", None)
-                    if callable(close_fn):
-                        close_fn(campaign_id)
-                    else:
-                        # Backward-compatible fallback if old service instance is loaded
-                        with svc.db.transaction() as conn:
-                            svc.campaigns.close_filling_period(conn, campaign_id)
-                    set_step_progress(selected_id, completed_phase=4, current_phase=5)
-                    st.success("Filling period closed.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"{ICONS['error']} Could not close filling period: {exc}")
-        else:
-            set_step_progress(selected_id, current_phase=5)
-            st.rerun()
-
+        render_evaluation(selected_id)
     elif phase_index == 5:
-        if selected_id == "new":
-            st.warning("Create the campaign first, then open results.")
-            return
-
-        st.info(
-            "Review campaign results here. Use the embedded results view to inspect participants, "
-            "completion, and aggregated outcomes before final closure."
-        )
-
-        # Keep Results marked completed, but do not hard-force current_phase to 5,
-        # so the top stepper remains freely clickable to earlier steps.
-        set_step_progress(selected_id, completed_phase=5)
-        current_campaign_id = int(selected_id)
-        embedded_campaign_key = "cr_embedded_campaign_id"
-        last_embedded_campaign_id = st.session_state.get(embedded_campaign_key)
-
-        # Keep internal Campaign Results navigation (campaign/overall/employee)
-        # across reruns while staying on this stepper page. Reset only when
-        # the selected campaign changes.
-        if last_embedded_campaign_id != current_campaign_id:
-            st.session_state.cr_view = "campaign"
-            st.session_state.cr_selected_employee_id = None
-            st.session_state.cr_selected_employee_name = None
-
-        st.session_state[embedded_campaign_key] = current_campaign_id
-        st.session_state.cr_selected_campaign_id = current_campaign_id
-        st.session_state.cr_selected_campaign_name = campaign_name
-
-        # Render full Campaign Results page content inline (no page navigation).
-        runpy.run_path("src/ui/pages/results/campaign_results_page.py", run_name="__main__")
-
+        render_results(selected_id, campaign_name)
     else:
-        st.subheader("Closure")
-        if selected_id == "new":
-            st.warning("Create the campaign first, then close it when the flow is finished.")
-            return
-
-        svc = CampaignService()
-        campaign_id = int(selected_id)
-        campaign = svc.get_campaign(campaign_id)
-        if campaign is None:
-            st.error("Campaign data is not available.")
-            return
-
-        comment = str(get(campaign, "comment") or "")
-        # Consider campaign closed only when the explicit CLOSED marker is present.
-        # This prevents "already closed" from appearing after filling is closed
-        # (which sets is_active=False with [PENDING_RESULTS]).
-        is_closed = "[CLOSED]" in comment
-
-        st.caption("Finalize the campaign and lock it as closed.")
-
-        if is_closed:
-            set_step_progress(selected_id, completed_phase=6, current_phase=6, force_completed=True)
-            st.success("Campaign is already closed.")
-            return
-
-        if st.button("Close Campaign", type="primary", key=f"stepper_close_campaign_{campaign_id}"):
-            try:
-                close_campaign_fn = getattr(svc, "close_campaign", None)
-                if callable(close_campaign_fn):
-                    close_campaign_fn(campaign_id)
-                else:
-                    with svc.db.transaction() as conn:
-                        svc.campaigns.close_campaign(conn, campaign_id)
-
-                set_step_progress(selected_id, completed_phase=6, current_phase=6, force_completed=True)
-                st.success("Campaign closed.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"{ICONS['error']} Could not close campaign: {exc}")
-
+        render_closure(selected_id)
 
 # ──────────────────────────────────────────────
 #  Main

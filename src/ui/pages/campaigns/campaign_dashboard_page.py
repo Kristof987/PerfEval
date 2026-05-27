@@ -85,7 +85,7 @@ if "campaign_dashboard_teams_invalidated_by_id" not in st.session_state:
 def _step_label_for_campaign(campaign) -> str:
     campaign_id = int(_get(campaign, "id", 0) or 0)
     if campaign_id <= 0:
-        return f"1 / {len(PHASES)}"
+        return PHASES[0]
 
     try:
         groups = svc.list_campaign_groups(campaign_id)
@@ -134,12 +134,12 @@ def _step_label_for_campaign(campaign) -> str:
         st.session_state.campaign_dashboard_completed_phase_by_id = completed_by_id
 
         next_step_index = min(len(PHASES) - 1, max(0, completed_phase + 1))
-        return f"{next_step_index + 1} / {len(PHASES)}"
+        return PHASES[next_step_index]
     except Exception:
         completed_by_id = st.session_state.get("campaign_dashboard_completed_phase_by_id", {})
         completed_phase = int(completed_by_id.get(str(campaign_id), -1))
         next_step_index = min(len(PHASES) - 1, max(0, completed_phase + 1))
-        return f"{next_step_index + 1} / {len(PHASES)}"
+        return PHASES[next_step_index]
 
 all_counts = {}
 try:
@@ -167,10 +167,13 @@ def _campaign_status_meta(campaign, completed: int, total: int) -> dict:
     return {"label": "INACTIVE", "fg": "#334155", "bg": "#e2e8f0", "section": "INACTIVE"}
 
 
-def _status_badge_html(label: str, fg: str, bg: str) -> str:
+def _status_badge_html(label: str, fg: str, bg: str, compact: bool = False) -> str:
+    padding = "2px 8px" if compact else "4px 12px"
+    font_size = "10px" if compact else "12px"
+    font_weight = "500" if compact else "600"
     return (
-        f"<span style='background:{bg};color:{fg};padding:4px 12px;"
-        f"border-radius:20px;font-size:12px;font-weight:600'>{label}</span>"
+        f"<span style='background:{bg};color:{fg};padding:{padding};"
+        f"border-radius:20px;font-size:{font_size};font-weight:{font_weight}'>{label}</span>"
     )
 
 
@@ -222,14 +225,23 @@ for section_key, section_title in sections:
         with st.container(border=True):
             top_left, top_right = st.columns([5, 1])
             with top_left:
-                st.markdown(f"**{name}**")
+                title_md = f"**{name}**" if is_large_section else f"<span style='font-size:0.9rem;font-weight:600'>{name}</span>"
+                st.markdown(title_md, unsafe_allow_html=not is_large_section)
                 if is_large_section:
                     st.caption(f"{description or 'No description'} · {participants} participants")
                 else:
-                    st.caption(f"{participants} participants")
+                    st.markdown(
+                        f"<p style='margin:0;color:#6b7280;font-size:12px'>{participants} participants</p>",
+                        unsafe_allow_html=True,
+                    )
             with top_right:
                 st.markdown(
-                    _status_badge_html(status_meta["label"], status_meta["fg"], status_meta["bg"]),
+                    _status_badge_html(
+                        status_meta["label"],
+                        status_meta["fg"],
+                        status_meta["bg"],
+                        compact=not is_large_section,
+                    ),
                     unsafe_allow_html=True,
                 )
 
@@ -248,9 +260,14 @@ for section_key, section_title in sections:
                 m1.metric("Completed", done)
                 m2.metric("In progress", wip)
                 m3.metric("Not started", not_started)
-                m4.metric("Step", _step_label_for_campaign(campaign))
+                m4.metric("Next Step", _step_label_for_campaign(campaign))
             else:
-                st.caption(f"Progress: {pct}% · Step: {_step_label_for_campaign(campaign)} · Deadline: {deadline_text}")
+                st.markdown(
+                    f"<p style='margin:0;color:#6b7280;font-size:12px'>"
+                    f"Progress: {pct}% · Next Step: {_step_label_for_campaign(campaign)} · Deadline: {deadline_text}"
+                    f"</p>",
+                    unsafe_allow_html=True,
+                )
 
             c_open, _ = st.columns([1, 1])
             with c_open:

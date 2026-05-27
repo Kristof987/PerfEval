@@ -158,7 +158,7 @@ section.stMain .block-container {
     height: 42px;
     border-radius: 999px;
     border: 1px solid #cbd5e1;
-    background-image: url("https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop");
+    background-image: url("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop");
     background-size: cover;
     background-position: center;
     color: transparent;

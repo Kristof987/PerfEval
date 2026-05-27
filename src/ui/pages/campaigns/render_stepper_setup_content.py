@@ -10,11 +10,11 @@ from ui.pages.campaigns.helpers.helpers import date_to_datetime
 
 def render_setup(phase_index: int, selected_id, selected_campaign):
     if phase_index == 0:
-        st.info(
-            "Set up the campaign basics here (name, description, dates). "
-            "This is the first step before Groups, Forms, and Matrix configuration."
-        )
         if selected_id == "new":
+            st.info(
+                "Set up the campaign basics here (name, description, dates). "
+                "This is the first step before Groups, Forms, and Matrix configuration."
+            )
             st.subheader("Create Campaign")
             st.info(
                 "Set the basic campaign details here (name, description, dates). "
