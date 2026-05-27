@@ -153,22 +153,23 @@ section.stMain .block-container {
     padding-top: 0rem;
     z-index: 1;
 }
-.st-key-top_profile_icon button {
+.st-key-top_settings_icon button {
     width: 42px;
     height: 42px;
     border-radius: 999px;
     border: 1px solid #cbd5e1;
-    background-image: url("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop");
-    background-size: cover;
-    background-position: center;
-    color: transparent;
+    background: #ffffff;
+    color: #334155;
+    font-size: 22px;
+    line-height: 1;
     padding: 0;
 }
-.st-key-top_profile_icon button:hover {
+.st-key-top_settings_icon button:hover {
     border-color: #60a5fa;
     box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    color: #1d4ed8;
 }
-.st-key-top_profile_icon button:focus {
+.st-key-top_settings_icon button:focus {
     outline: none;
     border-color: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
@@ -186,7 +187,7 @@ with title_col:
 
 with profile_col:
     if st.session_state.role is not None:
-        if st.button("profile", key="top_profile_icon", help="Settings"):
+        if st.button("⚙", key="top_settings_icon", help="Settings"):
             st.switch_page("ui/settings_page.py")
 
 page_dict = {}
