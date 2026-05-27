@@ -53,6 +53,11 @@ if "fb_current_form_id" not in st.session_state:
 st.divider()
 tab_list, tab_new = st.tabs([":material/assignment: My Forms", ":material/add: New Form"])
 
+with tab_list:
+    st.info(
+        "Manage your existing forms here. Open a form to review or edit its sections and questions."
+    )
+
 # -------------------------
 # NEW FORM
 # -------------------------

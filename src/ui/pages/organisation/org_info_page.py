@@ -40,14 +40,20 @@ def _flash_success_and_rerun(message: str, hide_add_employee_modal: bool = False
         "message": message,
         "expires_at": time.time() + 3.5,
     }
-    if hide_add_employee_modal:
-        st.session_state.show_add_employee = False
     st.rerun()
 
 sub_tab1, sub_tab2 = st.tabs(["Groups", "Employees"])
 
 with sub_tab1:
     st.subheader("Manage Groups")
+    st.info(
+        "**What is a Group?** A Group is a team of employees (for example: Engineering, Sales, HR) "
+        "that participates in this campaign. You assign groups to define who is included in evaluation steps."
+    )
+    st.info(
+        "Manage groups here. You can create groups, update descriptions, review members, "
+        "and add or remove employees from each group."
+    )
 
     with st.expander("➕ Create New Group", expanded=False):
         new_group_name = st.text_input("Group Name", key="new_group_name")
@@ -228,14 +234,11 @@ def add_employee_modal():
 
 with sub_tab2:
     st.subheader("Manage Employees")
-
-    if "show_add_employee" not in st.session_state:
-        st.session_state.show_add_employee = False
+    st.info(
+        "Manage employee records here. You can add new employees, review details, and maintain their group memberships."
+    )
 
     if st.button("➕ Add new employee"):
-        st.session_state.show_add_employee = True
-
-    if st.session_state.show_add_employee:
         add_employee_modal()
 
     st.divider()

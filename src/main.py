@@ -79,7 +79,6 @@ employee_3 = st.Page(
     "ui/pages/employee/forms_page.py",
     title="Assigned Forms",
     icon=":material/assignment:",
-    default=True,
 )
 admin_1 = st.Page(
     "ui/pages/admin/user_management_page.py",
@@ -87,10 +86,17 @@ admin_1 = st.Page(
     icon=":material/person_add:"
 )
 
-hr_campaigns = st.Page(
-    "ui/pages/campaigns/campaign_page.py",
-    title="Campaigns",
-    icon=":material/campaign:"
+hr_campaign_dashboard = st.Page(
+    "ui/pages/campaigns/campaign_dashboard_page.py",
+    title="Campaign Dashboard",
+    icon=":material/home:",
+    default=True,
+)
+
+hr_campaign_stepper = st.Page(
+    "ui/pages/campaigns/campaign_stepper_page.py",
+    title="Campaign Flow",
+    icon=":material/tactic:",
 )
 
 hr_survey_builder = st.Page(
@@ -101,7 +107,7 @@ hr_survey_builder = st.Page(
 
 hr_org_page = st.Page(
     "ui/pages/organisation/org_info_page.py",
-    title="Organisation Information",
+    title="Manage Employees and Groups",
     icon=":material/badge:"
 )
 
@@ -125,16 +131,17 @@ hr_campaign_results = st.Page(
 
 account_pages = [logout_page, settings, manage_groups]
 welcome_pages = [employee_3]
-admin_pages = [admin_1]
-hr_pages = [hr_campaigns, hr_survey_builder]
-org_pages = [hr_org_page]
-dashboard_pages = [hr_campaign_results]
+people_org_pages = [hr_org_page, admin_1]
+# Legacy pages are intentionally kept in code but hidden from sidebar navigation:
+# - ui/pages/campaigns/campaign_page.py
+# - ui/pages/results/campaign_results_page.py
+hr_pages = [hr_campaign_stepper, hr_survey_builder]
+dashboard_pages = []
 
 account_pages = _dedupe_pages(account_pages)
 welcome_pages = _dedupe_pages(welcome_pages)
-admin_pages = _dedupe_pages(admin_pages)
+people_org_pages = _dedupe_pages(people_org_pages)
 hr_pages = _dedupe_pages(hr_pages)
-org_pages = _dedupe_pages(org_pages)
 dashboard_pages = _dedupe_pages(dashboard_pages)
 
 st.markdown("""
@@ -151,7 +158,7 @@ section.stMain .block-container {
     height: 42px;
     border-radius: 999px;
     border: 1px solid #cbd5e1;
-    background-image: url("https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop");
+    background-image: url("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop");
     background-size: cover;
     background-position: center;
     color: transparent;
@@ -165,6 +172,10 @@ section.stMain .block-container {
     outline: none;
     border-color: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+/* Keep Campaign Flow routable, but hidden from sidebar menu */
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[href*="campaign_stepper_page.py"] {
+    display: none !important;
 }
 </style>""", unsafe_allow_html=True)
 
@@ -182,17 +193,21 @@ page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
     page_dict["General"] = welcome_pages
 if st.session_state.role == "Admin":
-    page_dict["Organisation"] = org_pages
-    page_dict["Admin"] = admin_pages
-    page_dict["Results"] = dashboard_pages
-if st.session_state.role == "HR employee":
-    page_dict["Organisation"] = org_pages
-    page_dict["Admin"] = admin_pages
+    page_dict["People & Organisation"] = people_org_pages
     page_dict["HR"] = hr_pages
-    page_dict["Results"] = dashboard_pages
+    if dashboard_pages:
+        page_dict["Results"] = dashboard_pages
+if st.session_state.role == "HR employee":
+    page_dict["People & Organisation"] = people_org_pages
+    page_dict["HR"] = hr_pages
+    if dashboard_pages:
+        page_dict["Results"] = dashboard_pages
 
 if len(page_dict) > 0:
-    pg = st.navigation({"Account": account_pages} | page_dict)
+    # Streamlit may not reliably render an empty section label ("").
+    # Use an explicit first section so Campaign Dashboard is always visible.
+    nav_sections = {"Home": [hr_campaign_dashboard], "Account": account_pages} | page_dict
+    pg = st.navigation(nav_sections)
 else:
     pg = st.navigation([st.Page(login)])
 
