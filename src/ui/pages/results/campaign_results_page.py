@@ -599,60 +599,41 @@ elif st.session_state.cr_view == "employee":
                                     if isinstance(val, list):
                                         return ", ".join(str(v) for v in val)
                                     return str(val)
-                                # ── Top Highlights (side-by-side gradient cards) ──────
-                                _top_s = analysis.get("top_strengths", [])
-                                _top_d = analysis.get("top_development_areas", [])
-                                if _top_s or _top_d:
-                                    def _numbered_items(items: list, dot_color: str, text_color: str) -> str:
-                                        html = ""
-                                        for _i, _item in enumerate(items, 1):
-                                            html += (
-                                                f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">'
-                                                f'<span style="background:{dot_color};color:#fff;border-radius:50%;'
-                                                f'min-width:20px;height:20px;display:inline-flex;align-items:center;'
-                                                f'justify-content:center;font-size:0.65rem;font-weight:700;flex-shrink:0;">{_i}</span>'
-                                                f'<span style="font-size:0.84rem;color:{text_color};line-height:1.45;">{_item}</span>'
-                                                f'</div>'
-                                            )
-                                        return html or f'<span style="color:#9ca3af;font-size:0.82rem;">—</span>'
-                                    _col_s, _col_d = st.columns(2)
-                                    with _col_s:
-                                        st.markdown(
-                                            f'<div style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);'
-                                            f'border-radius:14px;padding:1.2rem 1.3rem;border:1px solid #6ee7b7;height:100%;">'
-                                            f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                            f'letter-spacing:0.1em;text-transform:uppercase;color:#065f46;'
-                                            f'margin-bottom:10px;font-weight:600;">🏆 Top Strengths</div>'
-                                            f'{_numbered_items(_top_s, "#059669", "#064e3b")}'
-                                            f'</div>',
-                                            unsafe_allow_html=True,
+                                # ── shared card renderer helpers ──────────────────────
+                                _CARD_BASE = (
+                                    "background:#fff;border:1px solid #e4e8f0;"
+                                    "border-radius:12px;padding:0.85rem 1rem;"
+                                    "margin-bottom:8px;"
+                                    "box-shadow:0 1px 4px rgba(30,50,110,0.04);"
+                                )
+                                _LABEL_BASE = (
+                                    "font-size:0.67rem;font-family:'JetBrains Mono',monospace;"
+                                    "letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;"
+                                    "margin-bottom:10px;"
+                                )
+                                def _item_rows(items: list, accent: str) -> str:
+                                    html = ""
+                                    for _item in items:
+                                        html += (
+                                            f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">'
+                                            f'<span style="width:6px;height:6px;border-radius:50%;'
+                                            f'background:{accent};flex-shrink:0;margin-top:6px;"></span>'
+                                            f'<span style="font-size:0.84rem;color:#1a2035;line-height:1.45;">{_item}</span>'
+                                            f'</div>'
                                         )
-                                    with _col_d:
-                                        st.markdown(
-                                            f'<div style="background:linear-gradient(135deg,#fef3c7,#fde68a);'
-                                            f'border-radius:14px;padding:1.2rem 1.3rem;border:1px solid #fbbf24;height:100%;">'
-                                            f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                            f'letter-spacing:0.1em;text-transform:uppercase;color:#78350f;'
-                                            f'margin-bottom:10px;font-weight:600;">🛠️ Top Development Areas</div>'
-                                            f'{_numbered_items(_top_d, "#d97706", "#451a03")}'
-                                            f'</div>',
-                                            unsafe_allow_html=True,
-                                        )
-                                # ── Role-based Analysis ───────────────────────────────
+                                    return html or '<span style="font-size:0.82rem;color:#94a3b8;">—</span>'
                                 def _strength_cards(items: list) -> str:
                                     html = ""
                                     for _s in items:
                                         _comp = _join(_s.get("competence", ""))
                                         _evid = "".join(
-                                            f'<div style="font-size:0.78rem;color:#374151;margin-top:5px;'
-                                            f'padding-left:10px;border-left:2px solid #6ee7b7;'
-                                            f'font-style:italic;">&#34;{_e}&#34;</div>'
+                                            f'<div style="font-size:0.77rem;color:#64748b;margin-top:4px;'
+                                            f'padding-left:10px;border-left:2px solid #cbd5e1;">{_e}</div>'
                                             for _e in _s.get("evidence", [])
                                         )
                                         html += (
-                                            f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;'
-                                            f'border-radius:10px;padding:0.8rem 1rem;margin-bottom:8px;">'
-                                            f'<div style="font-size:0.83rem;font-weight:700;color:#14532d;margin-bottom:2px;">💪 {_comp}</div>'
+                                            f'<div style="{_CARD_BASE}border-left:3px solid #22c55e;">'
+                                            f'<div style="font-size:0.84rem;font-weight:600;color:#0f172a;">{_comp}</div>'
                                             f'{_evid}</div>'
                                         )
                                     return html
@@ -661,23 +642,42 @@ elif st.session_state.cr_view == "employee":
                                     for _a in items:
                                         _theme = _join(_a.get("theme", ""))
                                         _evid = "".join(
-                                            f'<div style="font-size:0.78rem;color:#374151;margin-top:5px;'
-                                            f'padding-left:10px;border-left:2px solid #fde68a;'
-                                            f'font-style:italic;">&#34;{_e}&#34;</div>'
+                                            f'<div style="font-size:0.77rem;color:#64748b;margin-top:4px;'
+                                            f'padding-left:10px;border-left:2px solid #cbd5e1;">{_e}</div>'
                                             for _e in _a.get("evidence", [])
                                         )
                                         html += (
-                                            f'<div style="background:#fffbeb;border:1px solid #fde68a;'
-                                            f'border-radius:10px;padding:0.8rem 1rem;margin-bottom:8px;">'
-                                            f'<div style="font-size:0.83rem;font-weight:700;color:#92400e;margin-bottom:2px;">📈 {_theme}</div>'
+                                            f'<div style="{_CARD_BASE}border-left:3px solid #f59e0b;">'
+                                            f'<div style="font-size:0.84rem;font-weight:600;color:#0f172a;">{_theme}</div>'
                                             f'{_evid}</div>'
                                         )
                                     return html
+                                # ── Top Highlights ────────────────────────────────────
+                                _top_s = analysis.get("top_strengths", [])
+                                _top_d = analysis.get("top_development_areas", [])
+                                if _top_s or _top_d:
+                                    _col_s, _col_d = st.columns(2)
+                                    with _col_s:
+                                        st.markdown(
+                                            f'<div style="{_CARD_BASE}min-height:0;">'
+                                            f'<div style="{_LABEL_BASE}">Top Strengths</div>'
+                                            f'{_item_rows(_top_s, "#22c55e")}'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                                    with _col_d:
+                                        st.markdown(
+                                            f'<div style="{_CARD_BASE}min-height:0;">'
+                                            f'<div style="{_LABEL_BASE}">Top Development Areas</div>'
+                                            f'{_item_rows(_top_d, "#f59e0b")}'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                                # ── Role-based Analysis ───────────────────────────────
                                 _role_based = analysis.get("role_based_analysis", {})
                                 if isinstance(_role_based, dict) and _role_based:
                                     st.markdown(
-                                        '<div style="margin-top:1.2rem;font-size:0.9rem;font-weight:700;color:#0f172a;">'
-                                        '👥 Role-based Analysis</div>',
+                                        f'<div style="{_LABEL_BASE}margin-top:1rem;">Role-based Analysis</div>',
                                         unsafe_allow_html=True,
                                     )
                                     _role_tabs = st.tabs(list(_role_based.keys()))
@@ -689,9 +689,7 @@ elif st.session_state.cr_view == "employee":
                                             with _rc1:
                                                 if _rstrengths:
                                                     st.markdown(
-                                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                                        f'letter-spacing:0.08em;text-transform:uppercase;color:#16a34a;'
-                                                        f'margin-bottom:8px;font-weight:600;">Strengths</div>'
+                                                        f'<div style="{_LABEL_BASE}">Strengths</div>'
                                                         f'{_strength_cards(_rstrengths)}',
                                                         unsafe_allow_html=True,
                                                     )
@@ -700,9 +698,7 @@ elif st.session_state.cr_view == "employee":
                                             with _rc2:
                                                 if _rareas:
                                                     st.markdown(
-                                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                                        f'letter-spacing:0.08em;text-transform:uppercase;color:#d97706;'
-                                                        f'margin-bottom:8px;font-weight:600;">Areas for Improvement</div>'
+                                                        f'<div style="{_LABEL_BASE}">Areas for Improvement</div>'
                                                         f'{_area_cards(_rareas)}',
                                                         unsafe_allow_html=True,
                                                     )
@@ -717,18 +713,14 @@ elif st.session_state.cr_view == "employee":
                                         with _rc1:
                                             if _bc_strengths:
                                                 st.markdown(
-                                                    f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                                    f'letter-spacing:0.08em;text-transform:uppercase;color:#16a34a;'
-                                                    f'margin-bottom:8px;font-weight:600;">💪 Strengths</div>'
+                                                    f'<div style="{_LABEL_BASE}">Strengths</div>'
                                                     f'{_strength_cards(_bc_strengths)}',
                                                     unsafe_allow_html=True,
                                                 )
                                         with _rc2:
                                             if _bc_areas:
                                                 st.markdown(
-                                                    f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                                    f'letter-spacing:0.08em;text-transform:uppercase;color:#d97706;'
-                                                    f'margin-bottom:8px;font-weight:600;">📈 Areas for Improvement</div>'
+                                                    f'<div style="{_LABEL_BASE}">Areas for Improvement</div>'
                                                     f'{_area_cards(_bc_areas)}',
                                                     unsafe_allow_html=True,
                                                 )
@@ -736,35 +728,23 @@ elif st.session_state.cr_view == "employee":
                                 _summary = analysis.get("summary", "")
                                 if _summary:
                                     st.markdown(
-                                        f'<div style="background:#f8fafc;border-left:4px solid #6366f1;'
-                                        f'border-radius:0 12px 12px 0;padding:1rem 1.3rem;margin:1rem 0;">'
-                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
-                                        f'letter-spacing:0.1em;text-transform:uppercase;color:#6366f1;'
-                                        f'margin-bottom:6px;font-weight:600;">📝 Summary</div>'
-                                        f'<div style="font-size:0.88rem;color:#1e293b;line-height:1.65;">{_summary}</div>'
+                                        f'<div style="{_CARD_BASE}margin-top:0.5rem;min-height:0;">'
+                                        f'<div style="{_LABEL_BASE}">Summary</div>'
+                                        f'<div style="font-size:0.87rem;color:#1a2035;line-height:1.6;">{_summary}</div>'
                                         f'</div>',
                                         unsafe_allow_html=True,
                                     )
-                                # ── Confidence badge ─────────────────────────────────
+                                # ── Confidence ────────────────────────────────────────
                                 _conf_level  = analysis.get("confidence_level", "")
                                 _conf_reason = analysis.get("confidence_reason", "")
                                 if _conf_level:
-                                    _CONF_STYLES = {
-                                        "high":   ("🟢", "#d1fae5", "#065f46", "#059669"),
-                                        "medium": ("🟡", "#fef3c7", "#78350f", "#d97706"),
-                                        "low":    ("🔴", "#fee2e2", "#7f1d1d", "#dc2626"),
-                                    }
-                                    _ci, _cbg, _ctc, _cbc = _CONF_STYLES.get(
-                                        _conf_level, ("⚪", "#f1f5f9", "#475569", "#94a3b8")
-                                    )
+                                    _conf_dot = {"high": "#22c55e", "medium": "#f59e0b", "low": "#ef4444"}.get(_conf_level, "#94a3b8")
                                     st.markdown(
-                                        f'<div style="display:inline-flex;align-items:center;gap:8px;'
-                                        f'background:{_cbg};border:1px solid {_cbc};border-radius:8px;'
-                                        f'padding:6px 14px;font-size:0.82rem;margin-top:4px;">'
-                                        f'<span>{_ci}</span>'
-                                        f'<span style="color:{_ctc};font-weight:600;">'
-                                        f'Confidence: {_conf_level.capitalize()}</span>'
-                                        f'<span style="color:{_ctc};opacity:0.75;"> — {_conf_reason}</span>'
+                                        f'<div style="display:inline-flex;align-items:center;gap:7px;margin-top:6px;">'
+                                        f'<span style="width:8px;height:8px;border-radius:50%;background:{_conf_dot};flex-shrink:0;"></span>'
+                                        f'<span style="font-size:0.8rem;color:#475569;">'
+                                        f'<b style="color:#0f172a;">Confidence: {_conf_level.capitalize()}</b>'
+                                        f' — {_conf_reason}</span>'
                                         f'</div>',
                                         unsafe_allow_html=True,
                                     )
