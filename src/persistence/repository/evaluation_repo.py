@@ -222,3 +222,38 @@ class EvaluationRepository:
             "campaign_id":  campaign_id,
             "forms":        forms,
         }
+
+    def get_campaign_completed_qa_rows(self, conn, campaign_id: int) -> List[Dict[str, Any]]:
+        """
+        Returns all completed evaluations for a campaign as a list of dicts with keys:
+        evaluatee_name, evaluator_role, form_name, answers, questions.
+        Used by CampaignResultsService.build_campaign_qa_json.
+        """
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                eval_tee.name          AS evaluatee_name,
+                eval_tor.org_role_name AS evaluator_role,
+                f.name                 AS form_name,
+                e.answers,
+                f.questions
+            FROM evaluation e
+            JOIN organisation_employees eval_tee ON e.evaluatee_id = eval_tee.id
+            JOIN organisation_employees eval_tor ON e.evaluator_id = eval_tor.id
+            JOIN form f ON e.form_id = f.id
+            WHERE e.campaign_id = %s
+              AND e.status = 'completed'
+            ORDER BY f.name, eval_tee.name
+        """, (campaign_id,))
+        rows = [
+            {
+                "evaluatee_name": r[0],
+                "evaluator_role": r[1],
+                "form_name":      r[2],
+                "answers":        r[3],
+                "questions":      r[4],
+            }
+            for r in cur.fetchall()
+        ]
+        cur.close()
+        return rows

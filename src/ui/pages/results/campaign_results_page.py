@@ -13,14 +13,13 @@ from openpyxl.styles import Alignment
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 from openpyxl.utils import get_column_letter
-
 from persistence.db.connection import get_db
 from persistence.repository.campaign_repo import CampaignRepository
-
+from utils.question_schema import normalize_questions
+from ui.pages.results.results_styles import inject_dashboard_css
 # Initialize repositories
 campaign_repo = CampaignRepository()
 db = get_db()
-
 # -------------------------
 # Session State Init
 # -------------------------
@@ -34,169 +33,6 @@ if "cr_selected_employee_id" not in st.session_state:
     st.session_state.cr_selected_employee_id = None
 if "cr_selected_employee_name" not in st.session_state:
     st.session_state.cr_selected_employee_name = None
-
-
-# -----------------------------------------------------------------------
-# Helper: normalize f.questions → {"sections": [...]}
-# -----------------------------------------------------------------------
-def _normalize_questions(raw) -> dict:
-    """
-    f.questions can arrive as:
-      - Python dict  (psycopg2 decoded jsonb)
-      - Python list  (legacy flat question list)
-      - JSON string  (text / json column)
-      - None
-    Always returns {"sections": [{"id": ..., "title": ..., "questions": [...]}]}
-    """
-    if raw is None:
-        return {"sections": []}
-    if isinstance(raw, str):
-        raw = raw.strip()
-        if not raw:
-            return {"sections": []}
-        try:
-            raw = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return {"sections": []}
-    # legacy: flat list of question dicts
-    if isinstance(raw, list):
-        return {"sections": [{"id": "legacy", "title": "General", "questions": raw}]}
-    # current: {"sections": [...]}
-    if isinstance(raw, dict) and "sections" in raw:
-        return raw
-    return {"sections": []}
-
-
-# -----------------------------------------------------------------------
-# Helper: collect all completed evaluations for a campaign as a JSON-
-# serialisable dict, ready to be passed to result_generation/main.py
-# -----------------------------------------------------------------------
-def get_campaign_qa_json(conn, campaign_id: int, campaign_name: str) -> dict:
-    """
-    Returns a dict structured as::
-
-        {
-            "campaign_id":   int,
-            "campaign_name": str,
-            "forms": {
-                "<form_name>": [
-                    {
-                        "question":      str,
-                        "question_type": str,
-                        "competence":    str,
-                        "options":       list,   # only for multiple_choice / slider_labels
-                        "answers": [
-                            {
-                                "evaluatee_name": str,
-                                "evaluator_role": str,
-                                "answer":         any
-                            },
-                            ...
-                        ]
-                    },
-                    ...
-                ],
-                ...
-            }
-        }
-    """
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT
-            eval_tee.name          AS evaluatee_name,
-            eval_tor.org_role_name AS evaluator_role,
-            f.name                 AS form_name,
-            e.answers,
-            f.questions
-        FROM evaluation e
-        JOIN organisation_employees eval_tee ON e.evaluatee_id = eval_tee.id
-        JOIN organisation_employees eval_tor ON e.evaluator_id = eval_tor.id
-        JOIN form f ON e.form_id = f.id
-        WHERE e.campaign_id = %s
-          AND e.status = 'completed'
-        ORDER BY f.name, eval_tee.name
-    """, (campaign_id,))
-
-    # form_name -> OrderedDict of q_id -> question entry (with "answers" list)
-    form_questions: dict = {}
-
-    for row in cur.fetchall():
-        evaluatee_name = row[0]
-        evaluator_role = row[1] or "Unknown"
-        form_name      = row[2]
-        answers        = row[3]
-        questions_raw  = row[4]
-
-        # --- parse answers ---
-        if isinstance(answers, str):
-            try:
-                answers = json.loads(answers)
-            except (json.JSONDecodeError, ValueError):
-                answers = {}
-        elif answers is None:
-            answers = {}
-
-        # --- parse questions into sections ---
-        content  = _normalize_questions(questions_raw)
-        sections = content.get("sections", [])
-
-        # Build the question skeleton for this form on first encounter
-        if form_name not in form_questions:
-            form_questions[form_name] = {}
-            for section in sections:
-                section_title = section.get("title", "General")
-                for q in section.get("questions", []):
-                    if not isinstance(q, dict):
-                        continue
-                    q_id   = str(q.get("id", ""))
-                    q_type = q.get("type", "text")
-
-                    entry: dict = {
-                        "question":      q.get("text", ""),
-                        "question_type": q_type,
-                        "competence":    section_title,
-                        "answers":       [],
-                    }
-                    # Attach selectable options where relevant
-                    if q_type == "multiple_choice":
-                        entry["options"] = q.get("options", [])
-                    elif q_type == "slider_labels":
-                        entry["options"] = q.get("slider_options", [])
-
-                    form_questions[form_name][q_id] = entry
-
-        # --- attach each evaluator's answer to the matching question ---
-        for q_id, q_entry in form_questions[form_name].items():
-            answer_raw = answers.get(q_id)
-
-            # Flatten legacy dict-wrapper answers
-            if isinstance(answer_raw, dict):
-                if "rating" in answer_raw:
-                    answer_raw = answer_raw["rating"]
-                elif "choice" in answer_raw:
-                    answer_raw = answer_raw["choice"]
-                elif "text" in answer_raw:
-                    answer_raw = answer_raw["text"]
-
-            if answer_raw is not None and answer_raw != "":
-                q_entry["answers"].append({
-                    "evaluatee_name": evaluatee_name,
-                    "evaluator_role": evaluator_role,
-                    "answer":         answer_raw,
-                })
-
-    cur.close()
-
-    return {
-        "campaign_id":   campaign_id,
-        "campaign_name": campaign_name,
-        "forms": {
-            form_name: list(questions_by_id.values())
-            for form_name, questions_by_id in form_questions.items()
-        },
-    }
-
-
 # -----------------------------------------------------------------------
 # Helper: render a single answer value given the question definition
 # -----------------------------------------------------------------------
@@ -225,15 +61,11 @@ def _render_answer(answer, question: dict):
         st.write(f"🎚️ {answer}")
     else:
         st.write(f"📝 {answer}")
-
-
 def _go_back_to_campaign_results():
     st.session_state.cr_view = "campaign"
     st.session_state.cr_selected_employee_id = None
     st.session_state.cr_selected_employee_name = None
     st.rerun()
-
-
 def _participants_df_for_campaign(conn, campaign_id: int) -> pd.DataFrame:
     cur = conn.cursor()
     cur.execute(
@@ -262,56 +94,15 @@ def _participants_df_for_campaign(conn, campaign_id: int) -> pd.DataFrame:
     rows = cur.fetchall()
     cur.close()
     return pd.DataFrame(rows, columns=["id", "name", "email", "role", "completed_evaluations"])
-
-
 def _render_summary_dashboard(evaluations: list, key_prefix: str = "overall"):
     if not evaluations:
         st.info("No completed evaluations found for this campaign.")
         return
-
     if len(evaluations) < 3:
         st.warning("Low data quality: fewer than 3 completed evaluations. Insights may be unstable.")
-
-    st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-section[data-testid="stMain"] {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    background: #f0f2f7 !important;
-    color: #1a2035;
-}
-section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !important; max-width: 100% !important; }
-.card {
-    background:#fff;
-    border:1px solid #e4e8f0;
-    border-radius:16px;
-    padding:1.3rem 1.4rem 1rem;
-    height:100%;
-    min-height:240px;
-    box-shadow:0 2px 12px rgba(30,50,110,0.05);
-    display:flex;
-    flex-direction:column;
-}
-.card-label { font-size:0.67rem; font-family:'JetBrains Mono',monospace; letter-spacing:0.1em; text-transform:uppercase; color:#94a3b8; margin-bottom:3px; }
-.card-title { font-size:0.92rem; font-weight:700; color:#0f172a; letter-spacing:-0.2px; margin-bottom:0.2rem; }
-.card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.4rem; }
-.card-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
-.metric-value { font-size:2.6rem; font-weight:800; letter-spacing:-2px; color:#0f172a; line-height:1; margin:0.5rem 0 0.35rem; }
-.metric-sub { font-size:0.7rem; color:#94a3b8; margin-top:7px; font-family:'JetBrains Mono',monospace; }
-.stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:6px; }
-.card .stat-grid { margin-top:auto; }
-.stat-item { background:#f8fafc; border:1px solid #e9ecf3; border-radius:10px; padding:10px 12px; }
-.stat-val { font-size:1.3rem; font-weight:800; color:#0f172a; letter-spacing:-1px; }
-.stat-lbl { font-size:0.64rem; color:#94a3b8; font-family:'JetBrains Mono',monospace; margin-top:2px; }
-.prog-row { margin-bottom:11px; }
-.prog-label-row { display:flex; justify-content:space-between; font-size:0.73rem; color:#475569; margin-bottom:5px; font-weight:500; }
-.prog-bar-bg { background:#e9ecf3; border-radius:4px; height:7px; overflow:hidden; }
-.prog-bar-fill { height:100%; border-radius:4px; }
-</style>""", unsafe_allow_html=True)
-
+    inject_dashboard_css()
     _sec_ratings: dict = {}
     _role_sec_rtg: dict = {}
-
     for ev in evaluations:
         _role = ev["evaluator_role"]
         for _sec in ev["sections"]:
@@ -333,7 +124,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
                         _role_sec_rtg.setdefault(_role, {}).setdefault(_st, []).append((_v, _rmax))
                     except (ValueError, TypeError):
                         pass
-
     section_names: list = []
     section_avgs_5: list = []
     for _sn, _rts in _sec_ratings.items():
@@ -341,10 +131,8 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             _a5 = sum(_v / _m * 5 for _v, _m in _rts) / len(_rts)
             section_names.append(_sn)
             section_avgs_5.append(round(_a5, 2))
-
     _all_vals = [_v / _m * 5 for _rts in _sec_ratings.values() for _v, _m in _rts]
     _overall5 = round(sum(_all_vals) / len(_all_vals), 2) if _all_vals else 0.0
-
     _role_avgs: dict = {}
     for _role, _sdct in _role_sec_rtg.items():
         _role_avgs[_role] = [
@@ -352,12 +140,10 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             if _sdct.get(_sn) else 0.0
             for _sn in section_names
         ]
-
     _total_evals = len(evaluations)
     _unique_roles = len(set(ev["evaluator_role"] for ev in evaluations))
     _unique_forms = len(set(ev["form_name"] for ev in evaluations))
     _total_ans = sum(len(v) for v in _sec_ratings.values())
-
     _ROLE_COLS = ["#3b82f6", "#6366f1", "#0ea5e9", "#8b5cf6", "#06b6d4", "#f59e0b"]
     _COMP_COLS = ["#3b82f6", "#6366f1", "#0ea5e9", "#8b5cf6", "#06b6d4", "#f59e0b", "#10b981", "#f43f5e"]
     _FILL_RGBA = [
@@ -371,7 +157,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
         font_color="#64748b", font_family="Plus Jakarta Sans",
         margin=dict(l=0, r=0, t=4, b=0),
     )
-
     def _sparkline_fig(_y):
         _fig = go.Figure()
         _fig.add_trace(go.Scatter(
@@ -386,7 +171,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
         _fig.update_xaxes(visible=False)
         _fig.update_yaxes(visible=False)
         return _fig
-
     def _radar_fig():
         if not section_names:
             return None
@@ -417,9 +201,7 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             font_color="#475569",
         )
         return _fig
-
     _cr1, _cr2, _cr3 = st.columns([1.05, 1.1, 0.85], gap="medium")
-
     with _cr1:
         st.markdown(f"""
 <div class="card">
@@ -435,7 +217,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
 </div>""", unsafe_allow_html=True)
         if section_avgs_5:
             st.plotly_chart(_sparkline_fig(section_avgs_5), use_container_width=True, config=_PLOT_CFG, key=f"{key_prefix}_sparkline")
-
     with _cr2:
         st.markdown("""
 <div class="card" style="min-height:112px;padding-bottom:0.9rem;">
@@ -452,7 +233,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             st.plotly_chart(_rfig, use_container_width=True, config=_PLOT_CFG, key=f"{key_prefix}_radar")
         else:
             st.caption("Nincs értékelési adat a radarhoz.")
-
     with _cr3:
         st.markdown(f"""
 <div class="card">
@@ -470,9 +250,7 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
     <div class="stat-item"><div class="stat-val">{_unique_forms}</div><div class="stat-lbl">Forms</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
-
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
     _cr4, _cr5 = st.columns([1, 1], gap="medium")
     with _cr4:
         if section_names:
@@ -497,7 +275,6 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
 </div>""", unsafe_allow_html=True)
         else:
             st.info("No rating questions found in the evaluations.")
-
     with _cr5:
         if _role_avgs:
             _rnames = list(_role_avgs.keys())
@@ -527,13 +304,10 @@ section[data-testid="stMain"] .block-container { padding: 1.2rem 1.6rem !importa
             st.plotly_chart(_rb_fig, use_container_width=True, config=_PLOT_CFG, key=f"{key_prefix}_role_bar")
         else:
             st.info("No evaluator role data available.")
-
-
 def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
     if not evaluations:
         st.info("No completed evaluations found for this employee in this campaign.")
         return
-
     # Build distinct forms by ID (preserving appearance order)
     seen_form_ids: set = set()
     form_ids: list = []
@@ -543,7 +317,6 @@ def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
             seen_form_ids.add(ev["form_id"])
             form_ids.append(ev["form_id"])
             form_name_by_id[ev["form_id"]] = ev["form_name"]
-
     # Form filter – only rendered when there are multiple forms
     if len(form_ids) > 1:
         selected_form_ids = st.multiselect(
@@ -556,45 +329,36 @@ def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
         )
     else:
         selected_form_ids = form_ids
-
     filtered_evals = [ev for ev in evaluations if ev["form_id"] in selected_form_ids]
-
     if not filtered_evals:
         st.info("No evaluations match the selected forms.")
         return
-
     # Group: form → evaluator_role → [evaluations]
     evals_by_form: dict = {}
     for ev in filtered_evals:
         evals_by_form.setdefault(ev["form_name"], {}).setdefault(
             ev["evaluator_role"], []
         ).append(ev)
-
     for form_name, roles_dict in evals_by_form.items():
         st.subheader(f"📋 {form_name}")
-
         # Use first evaluation's sections as question template
         first_eval = next(iter(next(iter(roles_dict.values()))))
         sections = first_eval["sections"]
-
         if not sections:
             st.caption("_(no questions in this form)_")
         else:
             for role_name, role_evals in roles_dict.items():
                 st.markdown(f"#### 👤 {role_name}")
-
                 for section in sections:
                     sec_title = section.get("title", "")
                     questions = section.get("questions", [])
                     if sec_title:
                         st.markdown(f"**{sec_title}**")
-
                     for q in questions:
                         if not isinstance(q, dict):
                             continue
                         q_id = str(q.get("id", ""))
                         q_text = q.get("text", "Question")
-
                         with st.container(border=True):
                             st.markdown(f"**{q_text}**")
                             any_answer = False
@@ -605,10 +369,7 @@ def _render_grouped_answers(evaluations: list, key_prefix: str = "answers"):
                                     any_answer = True
                             if not any_answer:
                                 st.caption("_(no answers)_")
-
         st.divider()
-
-
 # =========================================================
 # EMPLOYEE RESULT VIEW
 # =========================================================
@@ -616,9 +377,7 @@ if st.session_state.cr_view == "overall":
     st.title("Campaign Overall Results")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
     st.divider()
-
     campaign_id = st.session_state.cr_selected_campaign_id
-
     with db.connection() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -638,7 +397,6 @@ if st.session_state.cr_view == "overall":
               AND e.status      = 'completed'
             ORDER BY f.name, eval_tor.org_role_name, eval_tor.name
         """, (campaign_id,))
-
         evaluations = []
         for r in cur.fetchall():
             answers = r[5]
@@ -649,9 +407,7 @@ if st.session_state.cr_view == "overall":
                     answers = {}
             elif answers is None:
                 answers = {}
-
-            content = _normalize_questions(r[7])
-
+            content = normalize_questions(r[7])
             evaluations.append({
                 "id":             r[0],
                 "evaluator_name": r[1],
@@ -663,21 +419,16 @@ if st.session_state.cr_view == "overall":
                 "sections":       content["sections"],
             })
         cur.close()
-
     _render_summary_dashboard(evaluations, key_prefix="overall")
-
     st.divider()
     if st.button("← Back to Campaign Results", key="btn_back_campaign_results_overall"):
         _go_back_to_campaign_results()
-
 elif st.session_state.cr_view == "employee":
     st.title(f"Employee Evaluation Results - {st.session_state.cr_selected_employee_name}")
     st.caption(f"Campaign: {st.session_state.cr_selected_campaign_name}")
     st.divider()
-
     employee_id = st.session_state.cr_selected_employee_id
     campaign_id = st.session_state.cr_selected_campaign_id
-
     # Fetch all completed evaluations for this employee in this campaign
     with db.connection() as conn:
         cur = conn.cursor()
@@ -699,7 +450,6 @@ elif st.session_state.cr_view == "employee":
               AND e.status       = 'completed'
             ORDER BY f.name, eval_tor.org_role_name, eval_tor.name
         """, (employee_id, campaign_id))
-
         evaluations = []
         for r in cur.fetchall():
             answers = r[5]
@@ -710,9 +460,7 @@ elif st.session_state.cr_view == "employee":
                     answers = {}
             elif answers is None:
                 answers = {}
-
-            content = _normalize_questions(r[7])
-
+            content = normalize_questions(r[7])
             evaluations.append({
                 "id":             r[0],
                 "evaluator_name": r[1],
@@ -724,12 +472,9 @@ elif st.session_state.cr_view == "employee":
                 "sections":       content["sections"],
             })
         cur.close()
-
     tab_answers, tab_results = st.tabs(["📝 Answers", "📊 Results"])
-
     with tab_answers:
         _render_grouped_answers(evaluations, key_prefix="answers_all")
-
     with tab_results:
         selected_emp_name = (st.session_state.cr_selected_employee_name or "").strip().lower()
         self_evaluations = [
@@ -740,42 +485,33 @@ elif st.session_state.cr_view == "employee":
             ev for ev in evaluations
             if (ev.get("evaluator_name") or "").strip().lower() != selected_emp_name
         ]
-
         role_names: list = []
         for ev in non_self_evaluations:
             role_name = ev.get("evaluator_role") or "Unknown"
             if role_name not in role_names:
                 role_names.append(role_name)
-
         # Keep the classic structure explicitly visible: Summary / Self Evaluation / Role feedback tabs
         subpage_labels = ["Summary", "Self Evaluation"] + [f"{r} Role Feedback" for r in role_names]
         if not role_names:
             subpage_labels.append("Role Feedback")
-
         subpages = st.tabs(subpage_labels)
-
         with subpages[1]:
             _render_grouped_answers(self_evaluations, key_prefix="results_self")
-
         for idx, role_name in enumerate(role_names):
             with subpages[idx + 2]:
                 role_evals = [ev for ev in non_self_evaluations if ev.get("evaluator_role") == role_name]
                 _render_grouped_answers(role_evals, key_prefix=f"results_role_{idx}")
-
         if not role_names:
             with subpages[2]:
                 st.info("No role-based feedback available yet for this employee.")
-
         with subpages[0]:
             if not evaluations:
                 st.info("No completed evaluations found for this employee in this campaign.")
             else:
                 _render_summary_dashboard(evaluations, key_prefix="emp")
-
                 # ── AI Analysis ──────────────────────────────────────────────────
                 st.divider()
                 st.subheader("🤖 AI Analysis")
-
                 if st.button(
                     "Generate AI Results",
                     key="btn_generate_ai_results_emp",
@@ -808,7 +544,6 @@ elif st.session_state.cr_view == "employee":
                                     elif q_type == "slider_labels":
                                         entry["options"] = q.get("slider_options", [])
                                     form_questions_emp[fn][q_id] = entry
-
                         for q_id, q_entry in form_questions_emp[fn].items():
                             answer_raw = ev["answers"].get(q_id)
                             if isinstance(answer_raw, dict):
@@ -823,7 +558,6 @@ elif st.session_state.cr_view == "employee":
                                     "evaluator_role": ev_role,
                                     "answer":         answer_raw,
                                 })
-
                     employee_payload = {
                         "campaign_id":   st.session_state.cr_selected_campaign_id,
                         "campaign_name": st.session_state.cr_selected_campaign_name,
@@ -832,7 +566,6 @@ elif st.session_state.cr_view == "employee":
                             for fn, qs in form_questions_emp.items()
                         },
                     }
-
                     _script_path = os.path.abspath(
                         os.path.join(
                             os.path.dirname(__file__),
@@ -840,7 +573,6 @@ elif st.session_state.cr_view == "employee":
                             "services", "result_generation", "main.py",
                         )
                     )
-
                     with st.spinner("Running AI analysis…"):
                         proc = subprocess.run(
                             [sys.executable, _script_path, json.dumps(employee_payload)],
@@ -848,7 +580,6 @@ elif st.session_state.cr_view == "employee":
                             text=True,
                             timeout=120,
                         )
-
                     if proc.returncode == 0:
                         st.success("✅ Analysis finished.")
                         try:
@@ -861,7 +592,6 @@ elif st.session_state.cr_view == "employee":
                             else:
                                 with st.expander("🔍 Raw LLM output (JSON)", expanded=False):
                                     st.json(analysis)
-
                                 def _join(val) -> str:
                                     """Accept str or list[str] and return a plain string."""
                                     if isinstance(val, str):
@@ -869,80 +599,181 @@ elif st.session_state.cr_view == "employee":
                                     if isinstance(val, list):
                                         return ", ".join(str(v) for v in val)
                                     return str(val)
-
-                                role_based = analysis.get("role_based_analysis", {})
-                                if isinstance(role_based, dict) and role_based:
-                                    st.markdown("**👥 Role-based Analysis**")
-                                    for role_name, role_data in role_based.items():
-                                        st.markdown(f"### {role_name}")
-
-                                        strengths = role_data.get("strengths", []) if isinstance(role_data, dict) else []
-                                        if strengths:
-                                            st.markdown("**💪 Strengths**")
-                                            for s in strengths:
-                                                comps = _join(s.get("competence", ""))
-                                                st.markdown(f"- **{comps}**")
-                                                for ev_text in s.get("evidence", []):
-                                                    st.caption(f"  • {ev_text}")
-
-                                        areas = role_data.get("areas_for_improvement", []) if isinstance(role_data, dict) else []
-                                        if areas:
-                                            st.markdown("**📈 Areas for Improvement**")
-                                            for a in areas:
-                                                theme = _join(a.get("theme", ""))
-                                                st.markdown(f"- **{theme}**")
-                                                for ev_text in a.get("evidence", []):
-                                                    st.caption(f"  • {ev_text}")
-                                        st.divider()
+                                # ── Top Highlights (side-by-side gradient cards) ──────
+                                _top_s = analysis.get("top_strengths", [])
+                                _top_d = analysis.get("top_development_areas", [])
+                                if _top_s or _top_d:
+                                    def _numbered_items(items: list, dot_color: str, text_color: str) -> str:
+                                        html = ""
+                                        for _i, _item in enumerate(items, 1):
+                                            html += (
+                                                f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">'
+                                                f'<span style="background:{dot_color};color:#fff;border-radius:50%;'
+                                                f'min-width:20px;height:20px;display:inline-flex;align-items:center;'
+                                                f'justify-content:center;font-size:0.65rem;font-weight:700;flex-shrink:0;">{_i}</span>'
+                                                f'<span style="font-size:0.84rem;color:{text_color};line-height:1.45;">{_item}</span>'
+                                                f'</div>'
+                                            )
+                                        return html or f'<span style="color:#9ca3af;font-size:0.82rem;">—</span>'
+                                    _col_s, _col_d = st.columns(2)
+                                    with _col_s:
+                                        st.markdown(
+                                            f'<div style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);'
+                                            f'border-radius:14px;padding:1.2rem 1.3rem;border:1px solid #6ee7b7;height:100%;">'
+                                            f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                            f'letter-spacing:0.1em;text-transform:uppercase;color:#065f46;'
+                                            f'margin-bottom:10px;font-weight:600;">🏆 Top Strengths</div>'
+                                            f'{_numbered_items(_top_s, "#059669", "#064e3b")}'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                                    with _col_d:
+                                        st.markdown(
+                                            f'<div style="background:linear-gradient(135deg,#fef3c7,#fde68a);'
+                                            f'border-radius:14px;padding:1.2rem 1.3rem;border:1px solid #fbbf24;height:100%;">'
+                                            f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                            f'letter-spacing:0.1em;text-transform:uppercase;color:#78350f;'
+                                            f'margin-bottom:10px;font-weight:600;">🛠️ Top Development Areas</div>'
+                                            f'{_numbered_items(_top_d, "#d97706", "#451a03")}'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                                # ── Role-based Analysis ───────────────────────────────
+                                def _strength_cards(items: list) -> str:
+                                    html = ""
+                                    for _s in items:
+                                        _comp = _join(_s.get("competence", ""))
+                                        _evid = "".join(
+                                            f'<div style="font-size:0.78rem;color:#374151;margin-top:5px;'
+                                            f'padding-left:10px;border-left:2px solid #6ee7b7;'
+                                            f'font-style:italic;">&#34;{_e}&#34;</div>'
+                                            for _e in _s.get("evidence", [])
+                                        )
+                                        html += (
+                                            f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;'
+                                            f'border-radius:10px;padding:0.8rem 1rem;margin-bottom:8px;">'
+                                            f'<div style="font-size:0.83rem;font-weight:700;color:#14532d;margin-bottom:2px;">💪 {_comp}</div>'
+                                            f'{_evid}</div>'
+                                        )
+                                    return html
+                                def _area_cards(items: list) -> str:
+                                    html = ""
+                                    for _a in items:
+                                        _theme = _join(_a.get("theme", ""))
+                                        _evid = "".join(
+                                            f'<div style="font-size:0.78rem;color:#374151;margin-top:5px;'
+                                            f'padding-left:10px;border-left:2px solid #fde68a;'
+                                            f'font-style:italic;">&#34;{_e}&#34;</div>'
+                                            for _e in _a.get("evidence", [])
+                                        )
+                                        html += (
+                                            f'<div style="background:#fffbeb;border:1px solid #fde68a;'
+                                            f'border-radius:10px;padding:0.8rem 1rem;margin-bottom:8px;">'
+                                            f'<div style="font-size:0.83rem;font-weight:700;color:#92400e;margin-bottom:2px;">📈 {_theme}</div>'
+                                            f'{_evid}</div>'
+                                        )
+                                    return html
+                                _role_based = analysis.get("role_based_analysis", {})
+                                if isinstance(_role_based, dict) and _role_based:
+                                    st.markdown(
+                                        '<div style="margin-top:1.2rem;font-size:0.9rem;font-weight:700;color:#0f172a;">'
+                                        '👥 Role-based Analysis</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    _role_tabs = st.tabs(list(_role_based.keys()))
+                                    for _rtab, (_rname, _rdata) in zip(_role_tabs, _role_based.items()):
+                                        with _rtab:
+                                            _rstrengths = _rdata.get("strengths", []) if isinstance(_rdata, dict) else []
+                                            _rareas = _rdata.get("areas_for_improvement", []) if isinstance(_rdata, dict) else []
+                                            _rc1, _rc2 = st.columns(2)
+                                            with _rc1:
+                                                if _rstrengths:
+                                                    st.markdown(
+                                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                                        f'letter-spacing:0.08em;text-transform:uppercase;color:#16a34a;'
+                                                        f'margin-bottom:8px;font-weight:600;">Strengths</div>'
+                                                        f'{_strength_cards(_rstrengths)}',
+                                                        unsafe_allow_html=True,
+                                                    )
+                                                else:
+                                                    st.caption("No strengths identified for this role.")
+                                            with _rc2:
+                                                if _rareas:
+                                                    st.markdown(
+                                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                                        f'letter-spacing:0.08em;text-transform:uppercase;color:#d97706;'
+                                                        f'margin-bottom:8px;font-weight:600;">Areas for Improvement</div>'
+                                                        f'{_area_cards(_rareas)}',
+                                                        unsafe_allow_html=True,
+                                                    )
+                                                else:
+                                                    st.caption("No areas for improvement identified for this role.")
                                 else:
                                     # Backward compatibility with old schema
-                                    strengths = analysis.get("strengths", [])
-                                    if strengths:
-                                        st.markdown("**💪 Strengths**")
-                                        for s in strengths:
-                                            comps = _join(s.get("competence", ""))
-                                            st.markdown(f"- **{comps}**")
-                                            for ev_text in s.get("evidence", []):
-                                                st.caption(f"  • {ev_text}")
-                                    areas = analysis.get("areas_for_improvement", [])
-                                    if areas:
-                                        st.markdown("**📈 Areas for Improvement**")
-                                        for a in areas:
-                                            theme = _join(a.get("theme", ""))
-                                            st.markdown(f"- **{theme}**")
-                                            for ev_text in a.get("evidence", []):
-                                                st.caption(f"  • {ev_text}")
-
-                                top_strengths = analysis.get("top_strengths", [])
-                                if isinstance(top_strengths, list) and top_strengths:
-                                    st.markdown("**🏆 Top 3 Strengths**")
-                                    for item in top_strengths[:3]:
-                                        st.markdown(f"- {item}")
-
-                                top_dev = analysis.get("top_development_areas", [])
-                                if isinstance(top_dev, list) and top_dev:
-                                    st.markdown("**🛠️ Top 3 Development Areas**")
-                                    for item in top_dev[:3]:
-                                        st.markdown(f"- {item}")
-
-                                summary = analysis.get("summary", "")
-                                if summary:
-                                    st.markdown("**📝 Summary**")
-                                    st.write(summary)
-                                conf_level  = analysis.get("confidence_level", "")
-                                conf_reason = analysis.get("confidence_reason", "")
-                                if conf_level:
-                                    conf_color = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf_level, "⚪")
-                                    st.caption(f"{conf_color} Confidence: **{conf_level}** — {conf_reason}")
-
-
+                                    _bc_strengths = analysis.get("strengths", [])
+                                    _bc_areas = analysis.get("areas_for_improvement", [])
+                                    if _bc_strengths or _bc_areas:
+                                        _rc1, _rc2 = st.columns(2)
+                                        with _rc1:
+                                            if _bc_strengths:
+                                                st.markdown(
+                                                    f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                                    f'letter-spacing:0.08em;text-transform:uppercase;color:#16a34a;'
+                                                    f'margin-bottom:8px;font-weight:600;">💪 Strengths</div>'
+                                                    f'{_strength_cards(_bc_strengths)}',
+                                                    unsafe_allow_html=True,
+                                                )
+                                        with _rc2:
+                                            if _bc_areas:
+                                                st.markdown(
+                                                    f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                                    f'letter-spacing:0.08em;text-transform:uppercase;color:#d97706;'
+                                                    f'margin-bottom:8px;font-weight:600;">📈 Areas for Improvement</div>'
+                                                    f'{_area_cards(_bc_areas)}',
+                                                    unsafe_allow_html=True,
+                                                )
+                                # ── Summary ──────────────────────────────────────────
+                                _summary = analysis.get("summary", "")
+                                if _summary:
+                                    st.markdown(
+                                        f'<div style="background:#f8fafc;border-left:4px solid #6366f1;'
+                                        f'border-radius:0 12px 12px 0;padding:1rem 1.3rem;margin:1rem 0;">'
+                                        f'<div style="font-size:0.68rem;font-family:\'JetBrains Mono\',monospace;'
+                                        f'letter-spacing:0.1em;text-transform:uppercase;color:#6366f1;'
+                                        f'margin-bottom:6px;font-weight:600;">📝 Summary</div>'
+                                        f'<div style="font-size:0.88rem;color:#1e293b;line-height:1.65;">{_summary}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                # ── Confidence badge ─────────────────────────────────
+                                _conf_level  = analysis.get("confidence_level", "")
+                                _conf_reason = analysis.get("confidence_reason", "")
+                                if _conf_level:
+                                    _CONF_STYLES = {
+                                        "high":   ("🟢", "#d1fae5", "#065f46", "#059669"),
+                                        "medium": ("🟡", "#fef3c7", "#78350f", "#d97706"),
+                                        "low":    ("🔴", "#fee2e2", "#7f1d1d", "#dc2626"),
+                                    }
+                                    _ci, _cbg, _ctc, _cbc = _CONF_STYLES.get(
+                                        _conf_level, ("⚪", "#f1f5f9", "#475569", "#94a3b8")
+                                    )
+                                    st.markdown(
+                                        f'<div style="display:inline-flex;align-items:center;gap:8px;'
+                                        f'background:{_cbg};border:1px solid {_cbc};border-radius:8px;'
+                                        f'padding:6px 14px;font-size:0.82rem;margin-top:4px;">'
+                                        f'<span>{_ci}</span>'
+                                        f'<span style="color:{_ctc};font-weight:600;">'
+                                        f'Confidence: {_conf_level.capitalize()}</span>'
+                                        f'<span style="color:{_ctc};opacity:0.75;"> — {_conf_reason}</span>'
+                                        f'</div>',
+                                        unsafe_allow_html=True,
+                                    )
                                 # ── Export to Excel (fills eval_output_sample.xlsx template) ──
                                 def _auto_fit_columns(ws, min_width=10, max_width=80, padding=2):
                                     for col_cells in ws.columns:
                                         max_length = 0
                                         col_index = col_cells[0].column
                                         col_letter = get_column_letter(col_index)
-
                                         for cell in col_cells:
                                             try:
                                                 if cell.value is not None:
@@ -951,10 +782,8 @@ elif st.session_state.cr_view == "employee":
                                                         max_length = cell_length
                                             except Exception:
                                                 pass
-
                                         adjusted_width = min(max(max_length + padding, min_width), max_width)
                                         ws.column_dimensions[col_letter].width = adjusted_width
-
                                 # ── Export to Excel (fills eval_output_sample.xlsx template) ──
                                 def _build_ai_excel(
                                     emp_name: str,
@@ -973,7 +802,6 @@ elif st.session_state.cr_view == "employee":
                                     ))
                                     _wb = openpyxl.load_workbook(_tmpl)
                                     _ws = _wb["Summary"] if "Summary" in _wb.sheetnames else _wb.active
-
                                     def _eval_overall_5(_ev: dict) -> float | None:
                                         _vals = []
                                         for _sec in _ev.get("sections", []) or []:
@@ -996,7 +824,6 @@ elif st.session_state.cr_view == "employee":
                                         if not _vals:
                                             return None
                                         return sum(_vals) / len(_vals)
-
                                     # Per-evaluator overall averages (0-5 scale)
                                     _person_vals: dict[str, list[float]] = {}
                                     _person_role: dict[str, str] = {}
@@ -1008,7 +835,6 @@ elif st.session_state.cr_view == "employee":
                                         _role = (_ev.get("evaluator_role") or "Unknown").strip() or "Unknown"
                                         _person_vals.setdefault(_name, []).append(_ov)
                                         _person_role.setdefault(_name, _role)
-
                                     _person_avg: dict[str, float] = {
                                         _n: (sum(_vs) / len(_vs)) for _n, _vs in _person_vals.items() if _vs
                                     }
@@ -1022,7 +848,6 @@ elif st.session_state.cr_view == "employee":
                                         for _n, _avg in _person_avg.items()
                                         if "manager" not in (_person_role.get(_n, "").lower())
                                     ]
-
                                     _mgr_avg = (
                                         round(sum(_manager_person_avgs) / len(_manager_person_avgs), 2)
                                         if _manager_person_avgs else 0.0
@@ -1035,20 +860,17 @@ elif st.session_state.cr_view == "employee":
                                         round(sum(_person_avg.values()) / len(_person_avg), 2)
                                         if _person_avg else 0.0
                                     )
-
                                     def _set_value_safe(_sheet, _coord: str, _value) -> None:
                                         for _rng in _sheet.merged_cells.ranges:
                                             if _coord in _rng:
                                                 _sheet.cell(row=_rng.min_row, column=_rng.min_col).value = _value
                                                 return
                                         _sheet[_coord] = _value
-
                                     def _get_style_target_cell(_sheet, _coord: str):
                                         for _rng in _sheet.merged_cells.ranges:
                                             if _coord in _rng:
                                                 return _sheet.cell(row=_rng.min_row, column=_rng.min_col)
                                         return _sheet[_coord]
-
                                     # ── Write to individual cells ─────────────────
                                     _set_value_safe(_ws, "B5", emp_name)
                                     _set_value_safe(_ws, "B6", emp_role if emp_role else "")
@@ -1060,7 +882,6 @@ elif st.session_state.cr_view == "employee":
                                     _set_value_safe(_ws, "H7", _non_mgr_avg)
                                     _set_value_safe(_ws, "H12", round(_non_mgr_avg - _mgr_avg, 2))
                                     _set_value_safe(_ws, "K7", _all_eval_avg)
-
                                     # Build competence averages locally for Excel export (scale: 0-5)
                                     _section_ratings: dict[str, list[tuple[float, float]]] = {}
                                     for _ev in evaluations:
@@ -1082,15 +903,12 @@ elif st.session_state.cr_view == "employee":
                                                         _section_ratings.setdefault(_sec_title, []).append((_v, _m))
                                                 except (ValueError, TypeError):
                                                     pass
-
                                     _section_names = list(_section_ratings.keys())
                                     _section_avgs_5 = [
                                         round(sum(_v / _m * 5 for _v, _m in _rts) / len(_rts), 2)
                                         for _rts in _section_ratings.values() if _rts
                                     ]
-
                                     _competencies = [str(_c).strip() for _c in _section_names if str(_c).strip()]
-
                                     def _copy_row_style(_sheet, _src_row: int, _dst_row: int) -> None:
                                         _sheet.row_dimensions[_dst_row].height = _sheet.row_dimensions[_src_row].height
                                         for _col in range(1, _sheet.max_column + 1):
@@ -1098,14 +916,12 @@ elif st.session_state.cr_view == "employee":
                                             _dst_cell = _sheet.cell(row=_dst_row, column=_col)
                                             if _src_cell.has_style:
                                                 _dst_cell._style = copy(_src_cell._style)
-
                                     if _competencies:
                                         _start_row = 17
                                         _avg_by_comp = {
                                             str(_name).strip(): _avg
                                             for _name, _avg in zip(_section_names, _section_avgs_5)
                                         }
-
                                         # Header row directly above first competency.
                                         # We only fill the "Average" column for now.
                                         _header_row = _start_row - 1
@@ -1117,9 +933,7 @@ elif st.session_state.cr_view == "employee":
                                                 break
                                         if _avg_col is None:
                                             _avg_col = 2  # fallback: column right next to competency names
-
                                         _extra_rows = max(len(_competencies) - 1, 0)
-
                                         if _extra_rows > 0:
                                             # ── 1) Merged range-ek mentése és bontása a beszúrás előtt ──
                                             _saved_merges = []
@@ -1130,10 +944,8 @@ elif st.session_state.cr_view == "employee":
                                                         _rng.max_col, _rng.max_row,
                                                     ))
                                                     _ws.unmerge_cells(str(_rng))
-
                                             # ── 2) Sorok beszúrása ──
                                             _ws.insert_rows(_start_row + 1, amount=_extra_rows)
-
                                             # ── 3) Mentett merge-ek visszaállítása eltolva ──
                                             for _mc, _mr, _xc, _xr in _saved_merges:
                                                 _new_min = _mr + _extra_rows if _mr > _start_row else _mr
@@ -1149,12 +961,10 @@ elif st.session_state.cr_view == "employee":
                                                     )
                                                 except Exception:
                                                     pass
-
                                         # ── 4) Stílus másolása az összes beszúrt sorra ──
                                         for _idx in range(1, len(_competencies)):
                                             _row_idx = _start_row + _idx
                                             _copy_row_style(_ws, _start_row, _row_idx)
-
                                         # ── 5) Kompetencianevek beírása ──
                                         for _idx, _comp_name in enumerate(_competencies):
                                             _row_idx = _start_row + _idx
@@ -1168,13 +978,11 @@ elif st.session_state.cr_view == "employee":
                                                 shrink_to_fit=False,
                                                 indent=_a_cell.alignment.indent if _a_cell.alignment else 0,
                                             )
-
                                             # Competency average into the "Average" column.
                                             _avg_val = _avg_by_comp.get(_comp_name)
                                             if _avg_val is not None:
                                                 _avg_coord = f"{get_column_letter(_avg_col)}{_row_idx}"
                                                 _set_value_safe(_ws, _avg_coord, float(_avg_val))
-
                                         # ── 6) Felesleges üres sorok törlése a kompetenciák után ──
                                         _last_comp_row = _start_row + len(_competencies) - 1
                                         _scan_from = _last_comp_row + 1
@@ -1187,15 +995,12 @@ elif st.session_state.cr_view == "employee":
                                                 break
                                         if _empty_count > 0:
                                             _ws.delete_rows(_scan_from, amount=_empty_count)
-
                                         # ── 7) Merge comment/notes blocks right below competencies ──
                                         _block_start_row = _start_row + len(_competencies)
                                         _block_end_row = _block_start_row + 3
-
                                         def _ranges_intersect(_a1: int, _a2: int, _a3: int, _a4: int,
                                                               _b1: int, _b2: int, _b3: int, _b4: int) -> bool:
                                             return not (_a3 < _b1 or _b3 < _a1 or _a4 < _b2 or _b4 < _a2)
-
                                         def _merge_block_safe(_min_col: int, _max_col: int) -> None:
                                             for _rng in list(_ws.merged_cells.ranges):
                                                 if _ranges_intersect(
@@ -1209,12 +1014,10 @@ elif st.session_state.cr_view == "employee":
                                                 end_row=_block_end_row,
                                                 end_column=_max_col,
                                             )
-
                                         # A..E block
                                         _merge_block_safe(1, 5)
                                         # G..K block
                                         _merge_block_safe(7, 11)
-
                                         # ── 8) Fill merged blocks with summarized strengths / development areas ──
                                         def _normalize_items(_raw_list, _key: str) -> list[str]:
                                             _out = []
@@ -1230,12 +1033,10 @@ elif st.session_state.cr_view == "employee":
                                                     _seen.add(_txt.lower())
                                                     _out.append(_txt)
                                             return _out
-
                                         # STRICT source policy for Excel summary cells:
                                         # only use Top Strengths and Top Development Areas.
                                         _top_strengths = ana.get("top_strengths", [])
                                         _top_dev = ana.get("top_development_areas", [])
-
                                         _strength_items = (
                                             [str(_x).strip() for _x in _top_strengths if str(_x).strip()]
                                             if isinstance(_top_strengths, list)
@@ -1246,7 +1047,6 @@ elif st.session_state.cr_view == "employee":
                                             if isinstance(_top_dev, list)
                                             else []
                                         )
-
                                         def _set_summary_cell(_coord: str, _title: str, _items: list[str]) -> None:
                                             _cell = _get_style_target_cell(_ws, _coord)
                                             _bullet_text = "\n".join(f"• {_x}" for _x in (_items or ["N/A"]))
@@ -1257,17 +1057,14 @@ elif st.session_state.cr_view == "employee":
                                                 _cell.value = _rich
                                             except Exception:
                                                 _cell.value = f"{_title}\n{_bullet_text}"
-
                                             _cell.alignment = Alignment(
                                                 horizontal="left",
                                                 vertical="top",
                                                 wrap_text=True,
                                                 shrink_to_fit=False,
                                             )
-
                                         _set_summary_cell(f"A{_block_start_row}", "Key Strengths", _strength_items)
                                         _set_summary_cell(f"G{_block_start_row}", "Areas for Development", _dev_items)
-
                                     # Ensure text fields fit in cells
                                     _fit_alignment = Alignment(
                                         horizontal="left",
@@ -1277,13 +1074,11 @@ elif st.session_state.cr_view == "employee":
                                     )
                                     for _cell_ref in ("B5", "B6", "B7", "B12"):
                                         _get_style_target_cell(_ws, _cell_ref).alignment = _fit_alignment
-
                                     _auto_fit_columns(_ws)
                                     #_ws["B2"]  = camp
                                     #_ws["A4"]  = ana.get("summary", "")
                                     #_ws["A5"]  = ana.get("confidence_level", "")
                                     #_ws["B5"]  = ana.get("confidence_reason", "")
-
                                     # Strengths – starting at row 8
                                     # _row = 8
                                     # for _s in ana.get("strengths", []):
@@ -1305,18 +1100,15 @@ elif st.session_state.cr_view == "employee":
                                     #         _row += 1
                                     #
                                     # _auto_fit_columns(_ws)
-
                                     # ── Detailed answers sheet ─────────────────────────────────
                                     # Remove old legacy sheet completely
                                     if "Részletes értékelések" in _wb.sheetnames:
                                         _wb.remove(_wb["Részletes értékelések"])
-
                                     _detail_sheet_name = "Detailed Answers"
                                     if _detail_sheet_name in _wb.sheetnames:
                                         _ws_detail = _wb[_detail_sheet_name]
                                     else:
                                         _ws_detail = _wb.create_sheet(_detail_sheet_name)
-
                                     # Fixed headers/order requested
                                     _ws_detail["A1"] = "Competence"
                                     _ws_detail["B1"] = "Question"
@@ -1324,37 +1116,30 @@ elif st.session_state.cr_view == "employee":
                                     _ws_detail["D1"] = "Evaluator Role"
                                     _ws_detail["E1"] = "Answer (text/non-rating)"
                                     _ws_detail["F1"] = "Score (rating)"
-
                                     # Clear previous detail rows
                                     _max_existing = max(_ws_detail.max_row, 2)
                                     for _row_idx in range(2, _max_existing + 1):
                                         for _col_idx in range(1, 7):
                                             _ws_detail.cell(row=_row_idx, column=_col_idx).value = None
-
                                     _row_out = 2
                                     for _ev in evaluations:
                                         _role = _ev.get("evaluator_role", "")
                                         _answers = _ev.get("answers", {}) or {}
-
                                         for _section in _ev.get("sections", []) or []:
                                             _category = _section.get("title", "General")
                                             for _q in _section.get("questions", []) or []:
                                                 if not isinstance(_q, dict):
                                                     continue
-
                                                 _q_id = str(_q.get("id", ""))
                                                 _q_text = _q.get("text", "")
                                                 _q_type = _q.get("type", "text")
-
                                                 _ans = _answers.get(_q_id)
                                                 if isinstance(_ans, dict):
                                                     _ans = _ans.get("rating") or _ans.get("choice") or _ans.get("text")
-
                                                 _ws_detail.cell(row=_row_out, column=1).value = _category
                                                 _ws_detail.cell(row=_row_out, column=2).value = _q_text
                                                 _ws_detail.cell(row=_row_out, column=3).value = _q_type
                                                 _ws_detail.cell(row=_row_out, column=4).value = _role
-
                                                 # E: free text/non-rating answer
                                                 # F: rating score
                                                 if _q_type in ("rating", "slider_labels"):
@@ -1363,19 +1148,14 @@ elif st.session_state.cr_view == "employee":
                                                 else:
                                                     _ws_detail.cell(row=_row_out, column=5).value = "" if _ans is None else str(_ans)
                                                     _ws_detail.cell(row=_row_out, column=6).value = ""
-
                                                 _row_out += 1
-
                                     _auto_fit_columns(_ws_detail)
-
                                     _buf = io.BytesIO()
                                     _wb.save(_buf)
                                     _buf.seek(0)
                                     return _buf.getvalue()
-
                                 # Lekérdezzük az alkalmazott adatait (role, email) és a benyújtott értékelések számát
                                 _emp_id = st.session_state.cr_selected_employee_id
-
                                 with db.connection() as _conn:
                                     _cur = _conn.cursor()
                                     # Alkalmazott adatai
@@ -1387,7 +1167,6 @@ elif st.session_state.cr_view == "employee":
                                     _emp_name_full = _emp_row[0] if _emp_row else emp_name
                                     _emp_email    = _emp_row[1] if _emp_row else ""
                                     _emp_role     = _emp_row[2] if _emp_row else ""
-
                                     # Benyújtott értékelések száma (beleértve az önértékelést is)
                                     _cur.execute(
                                         """
@@ -1401,7 +1180,6 @@ elif st.session_state.cr_view == "employee":
                                     _count_row = _cur.fetchone()
                                     _submitted_count = _count_row[0] if _count_row else 0
                                     _cur.close()
-
                                 _xlsx_bytes = _build_ai_excel(
                                     emp_name=_emp_name_full,
                                     emp_email=_emp_email,
@@ -1423,18 +1201,14 @@ elif st.session_state.cr_view == "employee":
                         st.error("❌ Pipeline returned an error.")
                         with st.expander("Error details"):
                             st.code(proc.stderr or proc.stdout)
-
     st.divider()
     if st.button("← Back to Campaign Results", key="btn_back_campaign_results_bottom"):
         _go_back_to_campaign_results()
-
-
 # =========================================================
 # CAMPAIGN RESULTS VIEW
 # =========================================================
 else:
     st.title("Campaign Results")
-
     # Load campaigns
     with db.session() as session:
         campaigns = campaign_repo.list_campaigns(session)
@@ -1445,7 +1219,6 @@ else:
     for c in campaigns:
         campaign_options.append(c.name)
         campaign_dict[c.name] = c.id
-
     # Restore previously selected campaign index
     current_idx = 0
     if (
@@ -1453,17 +1226,13 @@ else:
         and st.session_state.cr_selected_campaign_name in campaign_options
     ):
         current_idx = campaign_options.index(st.session_state.cr_selected_campaign_name)
-
     selected_campaign = st.selectbox("Select Campaign", campaign_options, index=current_idx)
-
     if selected_campaign != "-- Select a campaign --":
         campaign_id = campaign_dict[selected_campaign]
         st.session_state.cr_selected_campaign_id   = campaign_id
         st.session_state.cr_selected_campaign_name = selected_campaign
-
         with db.connection() as conn:
             participants_df = _participants_df_for_campaign(conn, campaign_id)
-
             cur = conn.cursor()
             cur.execute(
                 """
@@ -1475,614 +1244,19 @@ else:
             )
             total_completed = int(cur.fetchone()[0] or 0)
             cur.close()
-
         participant_count = int(len(participants_df))
         participants_with_feedback = int((participants_df["completed_evaluations"] > 0).sum()) if participant_count else 0
         participation_rate = (participants_with_feedback / participant_count * 100) if participant_count else 0.0
-
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Participants", participant_count)
         k2.metric("Completed Evaluations", total_completed)
         k3.metric("Participants with Feedback", participants_with_feedback)
         k4.metric("Coverage", f"{participation_rate:.0f}%")
-
         if total_completed < 3:
             st.warning("Low data quality: too few completed evaluations for reliable campaign-level insight.")
-
         st.divider()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         with st.container(border=True):
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
             st.caption("Filters")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
             f1, f2 = st.columns([2.5, 1.5])
             with f1:
                 search_name = st.text_input(
@@ -2090,7 +1264,6 @@ else:
                     key="cr_filter_search_name",
                     placeholder="Type name or email...",
                 ).strip().lower()
-
             roles = sorted(participants_df["role"].fillna("No role").astype(str).unique().tolist()) if participant_count else []
             with f2:
                 selected_roles = st.multiselect(
@@ -2100,7 +1273,6 @@ else:
                     key="cr_filter_roles",
                     placeholder="Select role(s)...",
                 )
-
             f3, f4 = st.columns([3.0, 1.0])
             with f3:
                 max_completed = int(participants_df["completed_evaluations"].max()) if participant_count else 0
@@ -2124,13 +1296,11 @@ else:
             with f4:
                 st.write("")
                 reset = st.button("Reset filters", key="cr_reset_filters", use_container_width=True)
-
             if reset:
                 st.session_state.cr_filter_search_name = ""
                 st.session_state.cr_filter_roles = []
                 st.session_state.cr_filter_min_completed = 0
                 st.rerun()
-
         filtered_df = participants_df.copy()
         if participant_count:
             if search_name:
@@ -2141,7 +1311,6 @@ else:
             if selected_roles:
                 filtered_df = filtered_df[filtered_df["role"].isin(selected_roles)]
             filtered_df = filtered_df[filtered_df["completed_evaluations"] >= int(min_completed)]
-
         chips = []
         if search_name:
             chips.append(f"search: {search_name}")
@@ -2151,14 +1320,12 @@ else:
             chips.append(f"min completed: {int(min_completed)}")
         if chips:
             st.caption("Active filters: " + " | ".join(chips))
-
         csv_df = filtered_df.copy()
         export_xlsx_bytes = None
         if not csv_df.empty:
             csv_df["campaign_name"] = selected_campaign
             csv_df["generated_at"] = datetime.utcnow().isoformat()
             csv_df["active_filters"] = "; ".join(chips) if chips else "none"
-
             export_df = csv_df.rename(
                 columns={
                     "completed_evaluations": "completed evaluations",
@@ -2167,12 +1334,10 @@ else:
                     "active_filters": "active filters",
                 }
             )
-
             export_buffer = io.BytesIO()
             with pd.ExcelWriter(export_buffer, engine="openpyxl") as writer:
                 export_df.to_excel(writer, index=False, sheet_name="Participants")
             export_xlsx_bytes = export_buffer.getvalue()
-
         with st.container(border=True):
             st.caption("Export")
             st.download_button(
@@ -2185,9 +1350,7 @@ else:
                 disabled=(export_xlsx_bytes is None),
                 type="secondary",
             )
-
         st.divider()
-
         if not filtered_df.empty:
             preview_df = filtered_df[["name", "email", "role", "completed_evaluations"]].copy()
             preview_df = preview_df.sort_values(by=["completed_evaluations", "name"], ascending=[False, True])
@@ -2200,9 +1363,7 @@ else:
                 }
             )
             st.dataframe(preview_df, use_container_width=True, hide_index=True)
-
             st.divider()
-
             with st.container(border=True):
                 st.caption("Navigation")
                 if st.button(
@@ -2213,9 +1374,7 @@ else:
                 ):
                     st.session_state.cr_view = "overall"
                     st.rerun()
-
             st.divider()
-
             employees = filtered_df.to_dict("records")
             for emp in employees:
                 with st.container(border=True):
@@ -2234,7 +1393,6 @@ else:
                             st.rerun()
         else:
             st.info("No participants match the selected filters.")
-
     else:
         st.session_state.cr_selected_campaign_id   = None
         st.session_state.cr_selected_campaign_name = None
