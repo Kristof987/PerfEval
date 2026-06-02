@@ -257,3 +257,125 @@ class EvaluationRepository:
         ]
         cur.close()
         return rows
+
+    def get_completed_evaluations_for_campaign(self, conn, campaign_id: int) -> List[Tuple]:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                e.id,
+                eval_tor.name          AS evaluator_name,
+                eval_tor.org_role_name AS evaluator_role,
+                f.id                   AS form_id,
+                f.name                 AS form_name,
+                e.answers,
+                e.finish_date,
+                f.questions
+            FROM evaluation e
+            JOIN organisation_employees eval_tor ON e.evaluator_id = eval_tor.id
+            JOIN form f ON e.form_id = f.id
+            WHERE e.campaign_id = %s
+              AND e.status      = 'completed'
+            ORDER BY f.name, eval_tor.org_role_name, eval_tor.name
+            """,
+            (campaign_id,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    def get_completed_evaluations_for_employee(self, conn, employee_id: int, campaign_id: int) -> List[Tuple]:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                e.id,
+                eval_tor.name          AS evaluator_name,
+                eval_tor.org_role_name AS evaluator_role,
+                f.id                   AS form_id,
+                f.name                 AS form_name,
+                e.answers,
+                e.finish_date,
+                f.questions
+            FROM evaluation e
+            JOIN organisation_employees eval_tor ON e.evaluator_id = eval_tor.id
+            JOIN form f ON e.form_id = f.id
+            WHERE e.evaluatee_id = %s
+              AND e.campaign_id  = %s
+              AND e.status       = 'completed'
+            ORDER BY f.name, eval_tor.org_role_name, eval_tor.name
+            """,
+            (employee_id, campaign_id),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    def get_campaign_participants_overview_rows(self, conn, campaign_id: int) -> List[Tuple]:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                oe.id,
+                oe.name,
+                oe.email,
+                COALESCE(oe.org_role_name, 'No role') AS role,
+                COALESCE(ev.completed_count, 0) AS completed_evaluations
+            FROM organisation_employees oe
+            JOIN employee_groups eg ON oe.id = eg.employee_id
+            JOIN campaign_groups cg ON eg.group_id = cg.group_id
+            LEFT JOIN (
+                SELECT evaluatee_id, COUNT(*) AS completed_count
+                FROM evaluation
+                WHERE campaign_id = %s AND status = 'completed'
+                GROUP BY evaluatee_id
+            ) ev ON ev.evaluatee_id = oe.id
+            WHERE cg.campaign_id = %s
+            GROUP BY oe.id, oe.name, oe.email, oe.org_role_name, ev.completed_count
+            ORDER BY oe.name ASC
+            """,
+            (campaign_id, campaign_id),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    def count_completed_evaluations_for_campaign(self, conn, campaign_id: int) -> int:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM evaluation
+            WHERE campaign_id = %s AND status = 'completed'
+            """,
+            (campaign_id,),
+        )
+        count = int(cur.fetchone()[0] or 0)
+        cur.close()
+        return count
+
+    def get_employee_result_export_metadata(self, conn, employee_id: int, campaign_id: int) -> Dict[str, Any]:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name, email, org_role_name FROM organisation_employees WHERE id = %s",
+            (employee_id,),
+        )
+        employee_row = cur.fetchone()
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM evaluation
+            WHERE evaluatee_id = %s
+              AND campaign_id = %s
+              AND status = 'completed'
+            """,
+            (employee_id, campaign_id),
+        )
+        count_row = cur.fetchone()
+        cur.close()
+
+        return {
+            "name": employee_row[0] if employee_row else None,
+            "email": employee_row[1] if employee_row else "",
+            "role": employee_row[2] if employee_row else "",
+            "submitted_count": count_row[0] if count_row else 0,
+        }

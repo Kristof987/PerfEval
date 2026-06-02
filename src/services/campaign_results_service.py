@@ -10,6 +10,31 @@ from persistence.repository.evaluation_repo import EvaluationRepository
 from utils.question_schema import normalize_questions
 
 
+def _build_evaluation_list(rows) -> List[Dict[str, Any]]:
+    result = []
+    for r in rows:
+        answers = r[5]
+        if isinstance(answers, str):
+            try:
+                answers = json.loads(answers)
+            except (json.JSONDecodeError, ValueError):
+                answers = {}
+        elif answers is None:
+            answers = {}
+        content = normalize_questions(r[7])
+        result.append({
+            "id":             r[0],
+            "evaluator_name": r[1],
+            "evaluator_role": r[2] or "Unknown",
+            "form_id":        r[3],
+            "form_name":      r[4],
+            "answers":        answers,
+            "finish_date":    r[6],
+            "sections":       content["sections"],
+        })
+    return result
+
+
 class CampaignResultsService:
     def __init__(self):
         self.db = get_db()
@@ -87,8 +112,96 @@ class CampaignResultsService:
             "forms": {form_name: list(questions_by_id.values()) for form_name, questions_by_id in form_questions.items()},
         }
 
+    def build_employee_qa_json(
+        self,
+        campaign_id: int,
+        campaign_name: str,
+        employee_name: str,
+        evaluations: List[Dict[str, Any]],
+    ) -> dict:
+        form_questions: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+        for evaluation in evaluations:
+            form_name = evaluation["form_name"]
+            evaluator_role = evaluation.get("evaluator_role") or "Unknown"
+            answers = self._parse_answers(evaluation.get("answers"))
+            sections: List[Dict[str, Any]] = evaluation.get("sections", [])
+
+            if form_name not in form_questions:
+                form_questions[form_name] = {}
+                for section in sections:
+                    section_title = section.get("title", "General")
+                    for question in section.get("questions", []):
+                        if not isinstance(question, dict):
+                            continue
+
+                        question_id = str(question.get("id", ""))
+                        question_type = question.get("type", "text")
+                        entry: Dict[str, Any] = {
+                            "question": question.get("text", ""),
+                            "question_type": question_type,
+                            "competence": section_title,
+                            "answers": [],
+                        }
+                        if question_type == "multiple_choice":
+                            entry["options"] = question.get("options", [])
+                        elif question_type == "slider_labels":
+                            entry["options"] = question.get("slider_options", [])
+
+                        form_questions[form_name][question_id] = entry
+
+            for question_id, question_entry in form_questions[form_name].items():
+                answer_raw = answers.get(question_id)
+                if isinstance(answer_raw, dict):
+                    if "rating" in answer_raw:
+                        answer_raw = answer_raw["rating"]
+                    elif "choice" in answer_raw:
+                        answer_raw = answer_raw["choice"]
+                    elif "text" in answer_raw:
+                        answer_raw = answer_raw["text"]
+
+                if answer_raw is not None and answer_raw != "":
+                    question_entry["answers"].append(
+                        {
+                            "evaluatee_name": employee_name,
+                            "evaluator_role": evaluator_role,
+                            "answer": answer_raw,
+                        }
+                    )
+
+        return {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_name,
+            "forms": {form_name: list(questions_by_id.values()) for form_name, questions_by_id in form_questions.items()},
+        }
+
     def get_participants_df_for_campaign(self, campaign_id: int) -> pd.DataFrame:
         with self.db.connection() as conn:
             rows = self.evaluations.get_campaign_participants_overview_rows(conn, campaign_id)
         return pd.DataFrame(rows, columns=["id", "name", "email", "role", "completed_evaluations"])
+
+    def count_completed_evaluations_for_campaign(self, campaign_id: int) -> int:
+        with self.db.connection() as conn:
+            return self.evaluations.count_completed_evaluations_for_campaign(conn, campaign_id)
+
+    def get_employee_result_export_metadata(self, employee_id: int, campaign_id: int, fallback_name: str) -> Dict[str, Any]:
+        with self.db.connection() as conn:
+            metadata = self.evaluations.get_employee_result_export_metadata(conn, employee_id, campaign_id)
+
+        return {
+            "name": metadata.get("name") or fallback_name,
+            "email": metadata.get("email") or "",
+            "role": metadata.get("role") or "",
+            "submitted_count": metadata.get("submitted_count") or 0,
+        }
+
+    def get_evaluations_for_campaign(self, campaign_id: int) -> List[Dict[str, Any]]:
+        with self.db.connection() as conn:
+            rows = self.evaluations.get_completed_evaluations_for_campaign(conn, campaign_id)
+        return _build_evaluation_list(rows)
+
+    def get_evaluations_for_employee(self, employee_id: int, campaign_id: int) -> List[Dict[str, Any]]:
+        with self.db.connection() as conn:
+            rows = self.evaluations.get_completed_evaluations_for_employee(conn, employee_id, campaign_id)
+        return _build_evaluation_list(rows)
 
