@@ -11,6 +11,11 @@ from persistence.repository.system_roles_repo import SystemRolesRepository
 from persistence.repository.system_users_repo import SystemUsersRepository
 
 
+ADMIN_ROLE = "Admin"
+HR_EMPLOYEE_ROLE = "HR employee"
+USER_MANAGER_ROLES = [ADMIN_ROLE, HR_EMPLOYEE_ROLE]
+
+
 @dataclass(frozen=True)
 class LoginResult:
     is_valid: bool
@@ -76,7 +81,7 @@ class SystemUserService:
         current_user_role: str,
         employee_id: Optional[int] = None,
     ) -> Tuple[bool, str]:
-        if current_user_role not in ["Admin", "HR employee"]:
+        if current_user_role not in USER_MANAGER_ROLES:
             return False, "Only Admin or HR employee can add system users"
 
         try:
@@ -109,7 +114,7 @@ class SystemUserService:
             return self.users_repo.list_system_users(conn)
 
     def delete_system_user(self, user_id: int, current_user_role: str) -> Tuple[bool, str]:
-        if current_user_role not in ["Admin", "HR employee"]:
+        if current_user_role not in USER_MANAGER_ROLES:
             return False, "Only Admin or HR employee can delete system users"
 
         try:
@@ -123,7 +128,7 @@ class SystemUserService:
             return False, f"Error deleting user: {str(exc)}"
 
     def add_system_permission(self, name: str, description: str, current_user_role: str) -> Tuple[bool, str]:
-        if current_user_role != "Admin":
+        if current_user_role != ADMIN_ROLE:
             return False, "Only Admin can add system permissions"
 
         try:
@@ -134,7 +139,7 @@ class SystemUserService:
             return False, f"Error creating permission: {str(exc)}"
 
     def add_system_role(self, name: str, permission_id: Optional[int], current_user_role: str) -> Tuple[bool, str]:
-        if current_user_role != "Admin":
+        if current_user_role != ADMIN_ROLE:
             return False, "Only Admin can add system roles"
 
         try:
