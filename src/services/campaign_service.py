@@ -204,6 +204,24 @@ class CampaignService:
         with self.db.connection() as conn:
             return self.evals.get_group_matrix(conn, campaign_id, group_id)
 
+    def all_campaign_groups_have_matrix(self, campaign_id: int) -> bool:
+        """Return whether every assigned campaign group has at least one matrix assignment."""
+        with self.db.connection() as conn:
+            groups = self.groups.list_campaign_groups(conn, campaign_id)
+            if not groups:
+                return False
+
+            for group in groups:
+                group_id = int(group.get("id", 0) or 0)
+                if group_id <= 0:
+                    return False
+
+                matrix = self.evals.get_group_matrix(conn, campaign_id, group_id)
+                if not any(bool(evaluatees) for evaluatees in matrix.values()):
+                    return False
+
+            return True
+
     def save_evaluations_batch(
         self,
         campaign_id: int,

@@ -72,7 +72,7 @@ def logout():
 role = st.session_state.role
 
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
-settings = st.Page("ui/settings_page.py", title="Settings", icon=":material/settings:")
+settings = st.Page("ui/pages/settings/settings_page.py", title="Settings", icon=":material/settings:")
 manage_groups = st.Page("ui/pages/groups/my_groups_page.py", title="My Groups", icon=":material/groups:")
 
 employee_3 = st.Page(
@@ -188,7 +188,7 @@ with title_col:
 with profile_col:
     if st.session_state.role is not None:
         if st.button("⚙", key="top_settings_icon", help="Settings"):
-            st.switch_page("ui/settings_page.py")
+            st.switch_page("ui/pages/settings/settings_page.py")
 
 page_dict = {}
 if st.session_state.role in ["Employee", "Admin", "Team Leader", "Management", "HR employee"]:
