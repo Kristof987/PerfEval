@@ -3,7 +3,7 @@
 Deploy is available here: http://63.176.178.150/
 
 Available users:
-- Test User -> a hr employee
+- Test User -> a HR employee for HR related tasks
 - Dev A -> normal employee
 - Dev B -> normal employee
 - etc.
