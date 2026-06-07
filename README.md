@@ -9,6 +9,8 @@ Available users:
 - etc.
 
 ## Run Locally
+Repo link: https://github.com/Kristof987/PerfEval
+
 Prerequisities:
  - Installed Docker Desktop
 
