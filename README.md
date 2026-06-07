@@ -4,12 +4,13 @@ Latest deploy: http://63.176.178.150/
 Prerquisities:
  - Installed Docker Desktop
 
-## Gemini API key setup
+## OpenAI API key setup
 
-- Local/Docker: add `GEMINI_API_KEY=<your_key>` to [`.env`](.env)
-- GitHub Actions deploy: add repository secret `GEMINI_API_KEY`
-  - Name: `GEMINI_API_KEY`
-  - Value: your Gemini API key
+- Local/Docker: add `OPENAI_API_KEY=<your_key>` to [`.env`](.env)
+- Optional: set `OPENAI_MODEL=gpt-4o-mini` in [`.env`](.env)
+- GitHub Actions deploy: add repository secret `OPENAI_API_KEY`
+  - Name: `OPENAI_API_KEY`
+  - Value: your OpenAI API key
 
 From root:
 

@@ -8,21 +8,6 @@ import streamlit as st
 NO_CAMPAIGN_SELECTED = "-- Select a campaign --"
 
 
-def load_campaign_options(db, campaign_repo):
-    with db.session() as session:
-        campaigns = campaign_repo.list_campaigns(session)
-        for campaign in campaigns:
-            session.expunge(campaign)
-
-    campaign_options = [NO_CAMPAIGN_SELECTED]
-    campaign_dict = {}
-    for campaign in campaigns:
-        campaign_options.append(campaign.name)
-        campaign_dict[campaign.name] = campaign.id
-
-    return campaign_options, campaign_dict
-
-
 def get_selected_campaign_index(campaign_options):
     selected_campaign_name = st.session_state.cr_selected_campaign_name
     if selected_campaign_name and selected_campaign_name in campaign_options:
@@ -250,9 +235,9 @@ def render_campaign_details(db, campaign_results_service, campaign_id, selected_
     render_employee_cards(filtered_df)
 
 
-def render_campaign_view(db, campaign_repo, campaign_results_service):
+def render_campaign_view(db, campaign_results_service):
     st.title("Campaign Results")
-    campaign_options, campaign_dict = load_campaign_options(db, campaign_repo)
+    campaign_options, campaign_dict = campaign_results_service.list_campaign_options(NO_CAMPAIGN_SELECTED)
     current_idx = get_selected_campaign_index(campaign_options)
     selected_campaign = st.selectbox("Select Campaign", campaign_options, index=current_idx)
 

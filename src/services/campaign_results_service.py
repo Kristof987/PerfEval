@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from persistence.db.connection import get_db
+from persistence.repository.campaign_repo import CampaignRepository
 from persistence.repository.evaluation_repo import EvaluationRepository
 from utils.question_schema import normalize_questions
 
@@ -38,7 +39,21 @@ def _build_evaluation_list(rows) -> List[Dict[str, Any]]:
 class CampaignResultsService:
     def __init__(self):
         self.db = get_db()
+        self.campaigns = CampaignRepository()
         self.evaluations = EvaluationRepository()
+
+    def list_campaign_options(self, empty_label: str = "-- Select a campaign --") -> tuple[list[str], dict[str, int]]:
+        with self.db.session() as session:
+            campaigns = self.campaigns.list_campaigns(session)
+            campaign_rows = [(campaign.name, campaign.id) for campaign in campaigns]
+
+        campaign_options = [empty_label]
+        campaign_dict: dict[str, int] = {}
+        for campaign_name, campaign_id in campaign_rows:
+            campaign_options.append(campaign_name)
+            campaign_dict[campaign_name] = campaign_id
+
+        return campaign_options, campaign_dict
 
     @staticmethod
     def _parse_answers(raw_answers) -> Dict[str, Any]:

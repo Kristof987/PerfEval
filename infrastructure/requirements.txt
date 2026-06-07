@@ -11,7 +11,7 @@ streamlit_card
 streamlit-shadcn-ui
 streamlit-extras
 matplotlib
-google-genai
+openai
 sqlalchemy
 streamlit-extras
 streamlit_antd_components

@@ -22,17 +22,18 @@ jobs:
             cd ~/PerfEval
             git pull
 
-            # Ensure Gemini API key exists in GitHub Secrets
-            if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
-              echo "GEMINI_API_KEY secret is missing in GitHub repository secrets."
+            # Ensure OpenAI API key exists in GitHub Secrets
+            if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+              echo "OPENAI_API_KEY secret is missing in GitHub repository secrets."
               exit 1
             fi
 
             # Pass key directly to docker compose env substitution (no sed/.env escaping issues)
-            export GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}'
+            export OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}'
+            export OPENAI_MODEL='${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}'
 
             # Use base + prod override compose files
-            sudo --preserve-env=GEMINI_API_KEY docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build app
+            sudo --preserve-env=OPENAI_API_KEY,OPENAI_MODEL docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build app
 
             # Optional: show status in Actions logs
-            sudo --preserve-env=GEMINI_API_KEY docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            sudo --preserve-env=OPENAI_API_KEY,OPENAI_MODEL docker compose -f docker-compose.yml -f docker-compose.prod.yml ps

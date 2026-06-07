@@ -1,13 +1,11 @@
 import streamlit as st
 from persistence.db.connection import get_db
-from persistence.repository.campaign_repo import CampaignRepository
 from services.campaign_results_service import CampaignResultsService
 from ui.pages.results.campaign_results_campaign_view import render_campaign_view
 from ui.pages.results.campaign_results_employee_view import go_back_to_campaign_results, render_employee_view
 from ui.pages.results.charts import render_summary_dashboard
 
 
-campaign_repo = CampaignRepository()
 campaign_results_service = CampaignResultsService()
 db = get_db()
 
@@ -42,7 +40,7 @@ def render_page():
     elif st.session_state.cr_view == "employee":
         render_employee_view(db, campaign_results_service)
     else:
-        render_campaign_view(db, campaign_repo, campaign_results_service)
+        render_campaign_view(db, campaign_results_service)
 
 
 render_page()

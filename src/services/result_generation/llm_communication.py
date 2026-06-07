@@ -1,29 +1,21 @@
 import os
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 
 class LLMCommunication:
     def __init__(self):
-        api_key = (
-            os.getenv("GEMINI_API_KEY")
-            or os.getenv("GOOGLE_API_KEY")
-            or os.getenv("GENAI_API_KEY")
-        )
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError(
-                "Missing Gemini API key. Set GEMINI_API_KEY (or GOOGLE_API_KEY) in the app environment."
-            )
+            raise RuntimeError("Missing OpenAI API key. Set OPENAI_API_KEY in the app environment.")
 
-        self.client = genai.Client(api_key=api_key)
+        self.client = OpenAI(api_key=api_key)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     def request(self, prompt: str):
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0
-            )
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
         )
-        return response.text
+        return response.choices[0].message.content or ""
