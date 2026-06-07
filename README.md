@@ -1,10 +1,18 @@
 # PerfEval
-Latest deploy: http://63.176.178.150/
+## Use deploy
+Deploy is available here: http://63.176.178.150/
 
-Prerquisities:
+Available users:
+- Test User -> a hr employee
+- Dev A -> normal employee
+- Dev B -> normal employee
+- etc.
+
+## Run Locally
+Prerequisities:
  - Installed Docker Desktop
 
-## OpenAI API key setup
+### OpenAI API key setup
 
 - Create `.env` file in root
 - Add
