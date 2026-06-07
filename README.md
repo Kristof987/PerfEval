@@ -33,12 +33,11 @@ cd PerfEval
   POSTGRES_DB=appdb
   POSTGRES_USER=appuser
   POSTGRES_PASSWORD=apppassword
-  OPENAI_API_KEY=your-api-key
-```
+  OPENAI_API_KEY=your-api-key```
 
 3. Run the app
 
-From infrastructure folder:
+ From infrastructure folder:
 
 ```
  docker compose up -d --build
