@@ -37,8 +37,7 @@ cd PerfEval
 
 3. Run the app
 
- From infrastructure folder:
-
+  - From infrastructure folder:
 ```
  docker compose up -d --build
 ```
