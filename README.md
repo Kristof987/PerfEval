@@ -17,6 +17,7 @@ Available users automatically:
 Prerequisities:
  - Installed Docker Desktop
 
+## Steps
 1. Clone the repository
 
 ```
