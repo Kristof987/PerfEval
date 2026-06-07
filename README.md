@@ -1,6 +1,6 @@
 # PerfEval
 ## Use deploy
-Deploy is available here: http://63.176.178.150/
+Easiest to use deploy, which is available here: http://63.176.178.150/
 
 Available users:
 - Test User -> a HR employee for HR related tasks
@@ -10,6 +10,9 @@ Available users:
 
 ## Run Locally
 Repo link: https://github.com/Kristof987/PerfEval
+
+Available users automatically:
+- test_hr_user -> a HR employee for HR related tasks
 
 Prerequisities:
  - Installed Docker Desktop
