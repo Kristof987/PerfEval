@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import streamlit as st
 
@@ -305,30 +306,38 @@ def render_confidence(analysis):
 
 
 def get_excel_template_path():
-    return os.path.abspath(os.path.join(
-        os.path.dirname(__file__),
-        "..", "..", "..", "..",
-        "datafiles", "eval_output_sample.xlsx",
-    ))
+    return Path(__file__).resolve().parents[4] / "datafiles" / "eval_output_sample.xlsx"
 
 
 def render_ai_excel_export(campaign_results_service, evaluations, analysis, emp_name, campaign_id):
-    employee_id = st.session_state.cr_selected_employee_id
-    metadata = campaign_results_service.get_employee_result_export_metadata(
-        employee_id,
-        campaign_id,
-        emp_name,
-    )
-    xlsx_bytes = build_ai_excel(
-        emp_name=metadata["name"],
-        emp_email=metadata["email"],
-        emp_role=metadata["role"],
-        camp_name=st.session_state.cr_selected_campaign_name,
-        submitted_count=metadata["submitted_count"],
-        evaluations=evaluations,
-        analysis=analysis,
-        template_path=get_excel_template_path(),
-    )
+    template_path = get_excel_template_path()
+    if not template_path.exists():
+        st.warning(f"Excel export template not found: {template_path}")
+        return
+
+    try:
+        employee_id = st.session_state.cr_selected_employee_id
+        metadata = campaign_results_service.get_employee_result_export_metadata(
+            employee_id,
+            campaign_id,
+            emp_name,
+        )
+        xlsx_bytes = build_ai_excel(
+            emp_name=metadata["name"],
+            emp_email=metadata["email"],
+            emp_role=metadata["role"],
+            camp_name=st.session_state.cr_selected_campaign_name,
+            submitted_count=metadata["submitted_count"],
+            evaluations=evaluations,
+            analysis=analysis,
+            template_path=str(template_path),
+        )
+    except Exception as exc:
+        st.error("Excel export generation failed.")
+        with st.expander("Export error details"):
+            st.exception(exc)
+        return
+
     st.download_button(
         label="⬇️ Export to Excel",
         data=xlsx_bytes,
