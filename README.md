@@ -6,11 +6,14 @@ Prerquisities:
 
 ## OpenAI API key setup
 
-- Local/Docker: add `OPENAI_API_KEY=<your_key>` to [`.env`](.env)
-- Optional: set `OPENAI_MODEL=gpt-4o-mini` in [`.env`](.env)
-- GitHub Actions deploy: add repository secret `OPENAI_API_KEY`
-  - Name: `OPENAI_API_KEY`
-  - Value: your OpenAI API key
+- Create `.env` file in root
+- Add
+  ```
+  POSTGRES_DB=appdb
+  POSTGRES_USER=appuser
+  POSTGRES_PASSWORD=apppassword
+  OPENAI_API_KEY=your-api-key
+  ```
 
 From infrastructure folder:
 
