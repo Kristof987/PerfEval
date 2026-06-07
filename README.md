@@ -12,7 +12,7 @@ Prerquisities:
   - Name: `OPENAI_API_KEY`
   - Value: your OpenAI API key
 
-From root:
+From infrastructure folder:
 
 ```
  docker compose up -d --build
