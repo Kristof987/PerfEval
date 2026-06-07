@@ -1,6 +1,6 @@
 # PerfEval
-## Use deploy
-Easiest to use deploy, which is available here: http://63.176.178.150/
+## Use the deployed app
+The easiest way to try the app is the deployed version: http://63.176.178.150/
 
 Available users:
 - Test User -> a HR employee for HR related tasks
@@ -17,7 +17,14 @@ Available users automatically:
 Prerequisities:
  - Installed Docker Desktop
 
-### OpenAI API key setup
+1. Clone the repository
+
+```
+git clone https://github.com/Kristof987/PerfEval.git
+cd PerfEval
+```
+
+2. Create .env and set OPENAI_API_KEY
 
 - Create `.env` file in root
 - Add
@@ -26,7 +33,9 @@ Prerequisities:
   POSTGRES_USER=appuser
   POSTGRES_PASSWORD=apppassword
   OPENAI_API_KEY=your-api-key
-  ```
+ ```
+
+3. Run the app
 
 From infrastructure folder:
 
