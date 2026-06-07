@@ -34,7 +34,7 @@ cd PerfEval
   POSTGRES_USER=appuser
   POSTGRES_PASSWORD=apppassword
   OPENAI_API_KEY=your-api-key
- ```
+```
 
 3. Run the app
 
